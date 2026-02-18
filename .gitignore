@@ -1,0 +1,39 @@
+# Build artifacts
+build/
+_deps/
+CMakeFiles/
+*.cmake
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test outputs
+Testing/
+CTestTestfile.cmake
+*.gcda
+*.gcno
+*.gcov
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Coverage
+coverage/
+*.lcov
