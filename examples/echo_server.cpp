@@ -30,10 +30,8 @@ int main(int argc, char* argv[]) {
                 << (clean ? "clean" : "unclean") << ")" << std::endl;
     };
 
-    server.on_error = [](const std::shared_ptr<ewss::Connection>& conn,
-                         const std::string& error) {
-      std::cerr << "Client #" << conn->get_id() << " error: " << error
-                << std::endl;
+    server.on_error = [](const std::shared_ptr<ewss::Connection>& conn) {
+      std::cerr << "Client #" << conn->get_id() << " error" << std::endl;
     };
 
     server.run();

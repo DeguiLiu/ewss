@@ -1,15 +1,15 @@
 #pragma once
 
-#include <algorithm>
+#include "connection.hpp"
+#include "vocabulary.hpp"
+
 #include <cstdint>
+
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <poll.h>
 #include <vector>
-
-#include <sockpp/tcp_acceptor.h>
-
-#include "connection.hpp"
 
 namespace ewss {
 
@@ -45,15 +45,19 @@ class Server {
   std::function<void(const ConnPtr&)> on_connect;
   std::function<void(const ConnPtr&, std::string_view)> on_message;
   std::function<void(const ConnPtr&, bool)> on_close;
-  std::function<void(const ConnPtr&, const std::string&)> on_error;
+  std::function<void(const ConnPtr&)> on_error;
 
   // Status
   size_t get_connection_count() const { return connections_.size(); }
 
+  // Get error statistics (for monitoring)
+  uint64_t get_total_socket_errors() const { return total_socket_errors_; }
+  uint64_t get_total_handshake_errors() const { return total_handshake_errors_; }
+
  private:
   uint16_t port_;
   std::string bind_addr_;
-  sockpp::tcp_acceptor acceptor_;
+  int server_sock_ = -1;  // Native socket instead of sockpp
   bool is_running_ = false;
 
   std::vector<ConnPtr> connections_;
@@ -62,8 +66,12 @@ class Server {
 
   uint64_t next_conn_id_ = 1;
 
+  // Error statistics
+  uint64_t total_socket_errors_ = 0;
+  uint64_t total_handshake_errors_ = 0;
+
   // Internal methods
-  void accept_connection();
+  expected<void, ErrorCode> accept_connection();
   void handle_connection_io(ConnPtr& conn, const pollfd& pfd);
   void remove_closed_connections();
   void log_info(const std::string& msg);

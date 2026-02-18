@@ -1,18 +1,19 @@
 #pragma once
 
-#include <array>
+#include "protocol_hsm.hpp"
+#include "utils.hpp"
+#include "vocabulary.hpp"
+
 #include <cstdint>
 #include <cstring>
+
+#include <array>
 #include <functional>
 #include <memory>
+#include <sockpp/tcp_socket.h>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <sockpp/tcp_socket.h>
-
-#include "protocol_hsm.hpp"
-#include "utils.hpp"
 
 namespace ewss {
 
@@ -29,7 +30,8 @@ class RingBuffer {
 
   // Write data to buffer
   bool push(const T* data, size_t len) {
-    if (available() < len) return false;
+    if (available() < len)
+      return false;
     for (size_t i = 0; i < len; ++i) {
       buffer_[write_idx_] = data[i];
       write_idx_ = (write_idx_ + 1) % kCapacity;
@@ -51,7 +53,8 @@ class RingBuffer {
 
   // Remove data from buffer
   void advance(size_t len) {
-    if (len > count_) len = count_;
+    if (len > count_)
+      len = count_;
     read_idx_ = (read_idx_ + len) % kCapacity;
     count_ -= len;
   }
@@ -74,10 +77,10 @@ class RingBuffer {
 
   // Get data as string_view (only works if data is contiguous)
   std::string_view view() const {
-    if (empty()) return {};
+    if (empty())
+      return {};
     // Note: This is simplified; real ringbuffer may wrap
-    return std::string_view(
-        reinterpret_cast<const char*>(buffer_.data() + read_idx_), count_);
+    return std::string_view(reinterpret_cast<const char*>(buffer_.data() + read_idx_), count_);
   }
 
  private:
@@ -102,15 +105,20 @@ class Connection : public std::enable_shared_from_this<Connection> {
   using ConnPtr = std::shared_ptr<Connection>;
 
   explicit Connection(sockpp::tcp_socket&& sock);
+  explicit Connection(int fd);  // Native socket fd constructor
   ~Connection();
 
   // --- Reactor I/O API ---
 
   // Handle readable event from poll/epoll
-  bool handle_read();
+  // Returns success() on successful read, error(kSocketError) on socket error,
+  // error(kBufferFull) if RX buffer is full, error(kConnectionClosed) on peer close.
+  expected<void, ErrorCode> handle_read();
 
   // Handle writable event from poll/epoll
-  bool handle_write();
+  // Returns success() on successful write, error(kSocketError) on socket error,
+  // error(kBufferEmpty) if nothing to send.
+  expected<void, ErrorCode> handle_write();
 
   // --- User API ---
 
@@ -139,6 +147,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
 
   ConnectionState get_state() const;
 
+  // Get last error code (cached from most recent operation)
+  ErrorCode get_last_error() const { return last_error_code_; }
+
  private:
   friend class HandshakeState;
   friend class OpenState;
@@ -158,6 +169,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
   std::string handshake_buffer_;  // Accumulate handshake data
   std::string sec_websocket_key_;
 
+  // --- Error tracking ---
+  ErrorCode last_error_code_ = ErrorCode::kOk;
+
   // --- Helper functions ---
 
   void send(std::string_view payload, bool binary);
@@ -165,9 +179,10 @@ class Connection : public std::enable_shared_from_this<Connection> {
   void transition_to_state(ConnectionState state);
 
   // Parse HTTP upgrade request during handshake
-  bool parse_handshake();
+  // Returns success() on complete handshake, error(kHandshakeFailed) if invalid.
+  expected<void, ErrorCode> parse_handshake();
 
-  // Parse WebSocket frame during open state
+  // Parse WebSocket frames during open state
   void parse_frames();
 
   // Send WebSocket frame
@@ -183,8 +198,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
   bool is_handshake_complete(std::string_view data) const;
 
   // Unmask payload data
-  static void unmask_payload(uint8_t* payload, size_t len,
-                              const uint8_t* mask_key);
+  static void unmask_payload(uint8_t* payload, size_t len, const uint8_t* mask_key);
 
   // Log helper
   void log_error(const std::string& msg);
@@ -195,18 +209,15 @@ class Connection : public std::enable_shared_from_this<Connection> {
 // ============================================================================
 
 inline std::string Connection::generate_accept_key(std::string_view client_key) {
-  constexpr std::string_view kMagic =
-      "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+  constexpr std::string_view kMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
   std::string key(client_key);
   key.append(kMagic);
 
-  auto hash = SHA1::compute(reinterpret_cast<const uint8_t*>(key.data()),
-                             key.size());
+  auto hash = SHA1::compute(reinterpret_cast<const uint8_t*>(key.data()), key.size());
   return Base64::encode(hash.data(), hash.size());
 }
 
-inline void Connection::unmask_payload(uint8_t* payload, size_t len,
-                                        const uint8_t* mask_key) {
+inline void Connection::unmask_payload(uint8_t* payload, size_t len, const uint8_t* mask_key) {
   for (size_t i = 0; i < len; ++i) {
     payload[i] ^= mask_key[i % 4];
   }

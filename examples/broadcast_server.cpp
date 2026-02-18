@@ -2,6 +2,7 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+#include <mutex>
 
 // Simple broadcast server that echoes messages to all clients
 int main(int argc, char* argv[]) {
@@ -58,10 +59,8 @@ int main(int argc, char* argv[]) {
                 << broadcast_list.size() << " remaining)" << std::endl;
     };
 
-    server.on_error = [](const std::shared_ptr<ewss::Connection>& conn,
-                         const std::string& error) {
-      std::cerr << "Client #" << conn->get_id() << " error: " << error
-                << std::endl;
+    server.on_error = [](const std::shared_ptr<ewss::Connection>& conn) {
+      std::cerr << "Client #" << conn->get_id() << " error" << std::endl;
     };
 
     server.run();
