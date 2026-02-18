@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(ewss VERSION 0.1.0 LANGUAGES CXX)
+project(ewss VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ option(EWSS_BUILD_EXAMPLES "Build examples" ON)
 option(EWSS_NO_EXCEPTIONS "Build without exceptions" OFF)
 
 # Compiler flags
-if (EWSS_NO_EXCEPTIONS)
+if(EWSS_NO_EXCEPTIONS)
   add_compile_options(-fno-exceptions -fno-rtti)
 endif()
 
@@ -31,19 +31,9 @@ FetchContent_Declare(
   GIT_TAG v0.7.1
 )
 
-# hsm-cpp: Hierarchical state machine (header-only)
-FetchContent_Declare(
-  hsm_cpp
-  GIT_REPOSITORY https://ghfast.top/https://github.com/DeguiLiu/hsm-cpp.git
-  GIT_TAG main
-)
+FetchContent_MakeAvailable(sockpp)
 
-FetchContent_MakeAvailable(sockpp hsm_cpp)
-
-# ringbuffer: Header-only circular buffer (we'll inline or manually include)
-# For now, we'll use a custom implementation in utils.hpp
-
-# Main library
+# Main library (header-only with some .cpp files)
 file(GLOB SOURCE_FILES "src/*.cpp")
 
 add_library(ewss ${SOURCE_FILES})
@@ -65,7 +55,6 @@ if(EWSS_BUILD_TESTS)
   )
   FetchContent_MakeAvailable(Catch2)
 
-  # Unit tests
   file(GLOB TEST_SOURCES "tests/test_*.cpp")
 
   foreach(test_src ${TEST_SOURCES})
