@@ -4,6 +4,8 @@
 [![Tests](https://img.shields.io/badge/Tests-119%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**中文** | [English](README.md)
+
 轻量级 WebSocket 服务器，专为嵌入式 Linux (ARM) 设计。C++17，poll 驱动 Reactor，固定内存 RingBuffer，零拷贝 I/O。
 
 ## 特性

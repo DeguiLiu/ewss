@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/Tests-119%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[中文文档](README_zh.md)
+[中文](README_zh.md) | **English**
 
 Lightweight WebSocket server for embedded Linux (ARM). C++17, poll-based Reactor, fixed-memory RingBuffers, zero-copy I/O.
 
