@@ -74,6 +74,8 @@ class Server {
   std::function<void(const ConnPtr&, std::string_view)> on_message;
   std::function<void(const ConnPtr&, bool)> on_close;
   std::function<void(const ConnPtr&)> on_error;
+  std::function<void(const ConnPtr&)> on_backpressure;
+  std::function<void(const ConnPtr&)> on_drain;
 
   // Status
   size_t get_connection_count() const { return connections_.size(); }

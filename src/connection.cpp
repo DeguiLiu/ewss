@@ -50,6 +50,7 @@ expected<void, ErrorCode> Connection::handle_read() {
 
   if (n > 0) {
     rx_buffer_.commit_write(static_cast<size_t>(n));
+    touch_activity();
     protocol_handler_->handle_data_received(*this);
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::success();
@@ -80,6 +81,7 @@ expected<void, ErrorCode> Connection::handle_write() {
   ssize_t n = socket_.write(temp, len);
   if (n > 0) {
     tx_buffer_.advance(n);
+    check_low_watermark();
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::success();
   } else if (n < 0) {
@@ -112,6 +114,7 @@ expected<void, ErrorCode> Connection::handle_write_vectored() {
   ssize_t n = ::writev(socket_.handle(), iov, static_cast<int>(iov_count));
   if (n > 0) {
     tx_buffer_.advance(static_cast<size_t>(n));
+    check_low_watermark();
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::success();
   } else if (n < 0) {
@@ -134,6 +137,7 @@ void Connection::send(std::string_view payload, bool binary) {
 
   ws::OpCode opcode = binary ? ws::OpCode::kBinary : ws::OpCode::kText;
   write_frame(payload, opcode);
+  check_high_watermark();
 }
 
 void Connection::close(uint16_t code) {
@@ -166,6 +170,7 @@ void Connection::transition_to_state(ConnectionState state) {
       break;
     case ConnectionState::kClosing:
       protocol_handler_ = &g_closing_state;
+      closing_at_ = SteadyClock::now();
       break;
     case ConnectionState::kClosed:
       protocol_handler_ = &g_closed_state;
@@ -389,6 +394,24 @@ bool Connection::is_handshake_complete(std::string_view data) const {
 
 void Connection::log_error(const std::string& /* msg */) {
   // Placeholder: integrate with newosp async logger in future
+}
+
+void Connection::check_high_watermark() {
+  if (!write_paused_ && tx_buffer_.size() > kTxHighWatermark) {
+    write_paused_ = true;
+    if (on_backpressure) {
+      on_backpressure(shared_from_this());
+    }
+  }
+}
+
+void Connection::check_low_watermark() {
+  if (write_paused_ && tx_buffer_.size() < kTxLowWatermark) {
+    write_paused_ = false;
+    if (on_drain) {
+      on_drain(shared_from_this());
+    }
+  }
 }
 
 // ============================================================================

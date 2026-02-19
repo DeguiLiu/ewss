@@ -116,3 +116,43 @@ jobs:
         find include src tests examples \
           \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' \) -print0 \
           | xargs -0 cpplint --filter=-build/c++11,-legal/copyright,-readability/todo,-build/include_subdir 2>&1 || true
+
+    - name: Check clang-format
+      run: |
+        sudo apt-get update && sudo apt-get install -y clang-format
+        find include src tests \
+          \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' \) -print0 \
+          | xargs -0 clang-format --dry-run --Werror 2>&1 || true
+
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up CMake
+      uses: lukka/get-cmake@latest
+
+    - name: Build Release
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEWSS_BUILD_TESTS=OFF \
+          -DEWSS_BUILD_EXAMPLES=ON
+        cmake --build build --config Release -j
+
+    - name: Run Benchmark (single client, 64B)
+      run: |
+        timeout 60 ./build/benchmark_echo 1 5000 64 || true
+
+    - name: Run Benchmark (4 clients, 64B)
+      run: |
+        timeout 60 ./build/benchmark_echo 4 5000 64 || true
+
+    - name: Run Benchmark (payload sweep)
+      run: |
+        for size in 8 64 128 512 1024; do
+          echo "=== Payload: ${size}B ==="
+          timeout 60 ./build/benchmark_echo 1 5000 $size || true
+        done

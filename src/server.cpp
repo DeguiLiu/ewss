@@ -122,6 +122,14 @@ void Server::run() {
       handle_connection_io(connections_[i - 1], poll_fds_[i]);
     }
 
+    // Enforce timeouts (handshake + close)
+    for (uint32_t i = 0; i < connections_.size(); ++i) {
+      auto& conn = connections_[i];
+      if (conn->is_handshake_timed_out() || conn->is_close_timed_out()) {
+        conn->close();
+      }
+    }
+
     // Remove closed connections
     remove_closed_connections();
   }
@@ -164,6 +172,8 @@ expected<void, ErrorCode> Server::accept_connection() {
   conn->on_message = on_message;
   conn->on_close = on_close;
   conn->on_error = on_error;
+  conn->on_backpressure = on_backpressure;
+  conn->on_drain = on_drain;
 
   connections_.push_back(conn);
 

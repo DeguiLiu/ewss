@@ -55,3 +55,4 @@ test_*
 
 # Internal AI workspace
 .ai/
+benchmark_echo
