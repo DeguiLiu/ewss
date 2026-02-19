@@ -200,7 +200,6 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   // --- Protocol state ---
 
   bool handshake_completed_ = false;
-  std::string handshake_buffer_;  // Accumulate handshake data
   std::string sec_websocket_key_;
 
   // --- Error tracking ---

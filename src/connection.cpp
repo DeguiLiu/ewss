@@ -4,7 +4,6 @@
 
 #include <chrono>
 #include <iostream>
-#include <sstream>
 
 namespace ewss {
 
@@ -172,7 +171,7 @@ void Connection::transition_to_state(ConnectionState state) {
 }
 
 expected<void, ErrorCode> Connection::parse_handshake() {
-  // Read handshake data from RX buffer
+  // Zero-copy handshake: peek directly into RingBuffer, parse with string_view
   uint8_t temp[1024];
   size_t len = rx_buffer_.peek(temp, sizeof(temp));
 
@@ -181,81 +180,93 @@ expected<void, ErrorCode> Connection::parse_handshake() {
     return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
   }
 
-  std::string data(reinterpret_cast<const char*>(temp), len);
-  handshake_buffer_ += data;
+  std::string_view data(reinterpret_cast<const char*>(temp), len);
 
   // Check if we have complete HTTP request (ends with \r\n\r\n)
-  if (!is_handshake_complete(handshake_buffer_)) {
+  size_t end_pos = data.find("\r\n\r\n");
+  if (end_pos == std::string_view::npos) {
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
   }
 
-  // Remove consumed data from rx_buffer
-  rx_buffer_.advance(len);
+  // Total handshake size including the terminator
+  size_t handshake_size = end_pos + 4;
 
-  // Parse HTTP headers
-  std::istringstream iss(handshake_buffer_);
-  std::string line;
-
-  // Read request line
-  if (!std::getline(iss, line)) {
-    last_error_code_ = ErrorCode::kHandshakeFailed;
-    return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
-  }
-  if (line.find("GET") == std::string::npos) {
+  // Validate request line starts with "GET "
+  if (data.substr(0, 4) != "GET ") {
     last_error_code_ = ErrorCode::kHandshakeFailed;
     return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
   }
 
-  // Read headers
-  sec_websocket_key_.clear();
-  while (std::getline(iss, line)) {
-    if (line == "\r" || line.empty())
-      break;
-
-    size_t colon_pos = line.find(':');
-    if (colon_pos == std::string::npos)
-      continue;
-
-    std::string header_name = line.substr(0, colon_pos);
-    std::string header_value = line.substr(colon_pos + 1);
-
-    // Trim whitespace
-    header_value.erase(0, header_value.find_first_not_of(" \t\r\n"));
-    header_value.erase(header_value.find_last_not_of(" \t\r\n") + 1);
-
-    if (header_name == "Sec-WebSocket-Key") {
-      sec_websocket_key_ = header_value;
-    }
+  // Extract Sec-WebSocket-Key using zero-copy string_view scanning
+  constexpr std::string_view kKeyHeader = "Sec-WebSocket-Key: ";
+  size_t key_pos = data.find(kKeyHeader);
+  if (key_pos == std::string_view::npos) {
+    // Try case-insensitive fallback (lowercase)
+    constexpr std::string_view kKeyHeaderLower = "sec-websocket-key: ";
+    key_pos = data.find(kKeyHeaderLower);
   }
 
-  if (sec_websocket_key_.empty()) {
+  if (key_pos == std::string_view::npos) {
     last_error_code_ = ErrorCode::kHandshakeFailed;
     return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
   }
 
-  // Generate accept key
-  std::string accept_key = generate_accept_key(sec_websocket_key_);
+  // Find the value: skip header name, read until \r\n
+  size_t value_start = key_pos + kKeyHeader.size();
+  size_t value_end = data.find("\r\n", value_start);
+  if (value_end == std::string_view::npos) {
+    last_error_code_ = ErrorCode::kHandshakeFailed;
+    return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
+  }
 
-  // Build HTTP 101 response
-  std::string response =
+  std::string_view ws_key = data.substr(value_start, value_end - value_start);
+
+  // Trim trailing whitespace from key
+  while (!ws_key.empty() && (ws_key.back() == ' ' || ws_key.back() == '\t')) {
+    ws_key.remove_suffix(1);
+  }
+
+  if (ws_key.empty()) {
+    last_error_code_ = ErrorCode::kHandshakeFailed;
+    return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
+  }
+
+  // Consume handshake data from RX buffer
+  rx_buffer_.advance(handshake_size);
+
+  // Generate accept key (only allocation needed for SHA1+Base64)
+  std::string accept_key = generate_accept_key(ws_key);
+
+  // Build HTTP 101 response on stack
+  // "HTTP/1.1 101 Switching Protocols\r\n" = 34
+  // "Upgrade: websocket\r\n" = 20
+  // "Connection: Upgrade\r\n" = 21
+  // "Sec-WebSocket-Accept: " + key + "\r\n\r\n" = 22 + 28 + 4 = 54
+  // Total max ~130 bytes, fits on stack
+  char response_buf[256];
+  int response_len = snprintf(response_buf, sizeof(response_buf),
       "HTTP/1.1 101 Switching Protocols\r\n"
       "Upgrade: websocket\r\n"
       "Connection: Upgrade\r\n"
-      "Sec-WebSocket-Accept: " +
-      accept_key +
-      "\r\n"
-      "\r\n";
+      "Sec-WebSocket-Accept: %s\r\n"
+      "\r\n",
+      accept_key.c_str());
+
+  if (response_len <= 0 || static_cast<size_t>(response_len) >= sizeof(response_buf)) {
+    last_error_code_ = ErrorCode::kHandshakeFailed;
+    return expected<void, ErrorCode>::error(ErrorCode::kHandshakeFailed);
+  }
 
   // Write response to TX buffer
-  if (!tx_buffer_.push(reinterpret_cast<const uint8_t*>(response.data()), response.size())) {
+  if (!tx_buffer_.push(reinterpret_cast<const uint8_t*>(response_buf),
+                       static_cast<size_t>(response_len))) {
     last_error_code_ = ErrorCode::kBufferFull;
-    log_error("TX buffer overflow during handshake");
     return expected<void, ErrorCode>::error(ErrorCode::kBufferFull);
   }
 
   handshake_completed_ = true;
-  handshake_buffer_.clear();
+  sec_websocket_key_.clear();
 
   last_error_code_ = ErrorCode::kOk;
   return expected<void, ErrorCode>::success();
