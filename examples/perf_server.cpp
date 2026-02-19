@@ -129,7 +129,17 @@ int main(int argc, char* argv[]) {
   try {
     ewss::Server server(port);
 
-    server.on_connect = [](const std::shared_ptr<ewss::Connection>& conn) {
+    // Enable TCP tuning for low-latency
+    ewss::TcpTuning tuning;
+    tuning.tcp_nodelay = true;
+    tuning.tcp_quickack = true;
+    tuning.so_keepalive = true;
+    tuning.keepalive_idle_s = 30;
+    tuning.keepalive_interval_s = 5;
+    tuning.keepalive_count = 3;
+    server.set_tcp_tuning(tuning);
+
+    server.on_connect = [](const std::shared_ptr<ewss::Connection>& /* conn */) {
       g_stats.active_connections++;
     };
 
@@ -159,7 +169,8 @@ int main(int argc, char* argv[]) {
       conn->send(response);
     };
 
-    server.on_close = [](const std::shared_ptr<ewss::Connection>& conn, bool clean) {
+    server.on_close = [](const std::shared_ptr<ewss::Connection>& /* conn */,
+                         bool /* clean */) {
       g_stats.active_connections--;
     };
 

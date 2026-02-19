@@ -1,8 +1,11 @@
 #pragma once
 
+#include "vocabulary.hpp"
+
 #include <cstdint>
-#include <string_view>
+
 #include <functional>
+#include <string_view>
 
 namespace ewss {
 
@@ -51,17 +54,19 @@ class ProtocolHandler {
  public:
   virtual ~ProtocolHandler() = default;
 
-  // 处理接收数据
-  virtual void handle_data_received(Connection& conn) = 0;
+  // Handle received data
+  // Returns success() if data processed correctly, error() on protocol violation.
+  virtual expected<void, ErrorCode> handle_data_received(Connection& conn) = 0;
 
-  // 处理发送请求
-  virtual void handle_send_request(Connection& conn,
-                                    std::string_view payload) = 0;
+  // Handle send request
+  // Returns success() on successful frame encoding, error() if invalid state.
+  virtual expected<void, ErrorCode> handle_send_request(Connection& conn, std::string_view payload) = 0;
 
-  // 处理关闭请求
-  virtual void handle_close_request(Connection& conn, uint16_t code) = 0;
+  // Handle close request
+  // Returns success() on close initiation, error() if invalid state.
+  virtual expected<void, ErrorCode> handle_close_request(Connection& conn, uint16_t code) = 0;
 
-  // 获取当前状态
+  // Get current state
   virtual ConnectionState get_state() const = 0;
 };
 
@@ -71,33 +76,33 @@ class ProtocolHandler {
 
 class HandshakeState : public ProtocolHandler {
  public:
-  void handle_data_received(Connection& conn) override;
-  void handle_send_request(Connection& conn, std::string_view payload) override;
-  void handle_close_request(Connection& conn, uint16_t code) override;
+  expected<void, ErrorCode> handle_data_received(Connection& conn) override;
+  expected<void, ErrorCode> handle_send_request(Connection& conn, std::string_view payload) override;
+  expected<void, ErrorCode> handle_close_request(Connection& conn, uint16_t code) override;
   ConnectionState get_state() const override { return ConnectionState::kHandshaking; }
 };
 
 class OpenState : public ProtocolHandler {
  public:
-  void handle_data_received(Connection& conn) override;
-  void handle_send_request(Connection& conn, std::string_view payload) override;
-  void handle_close_request(Connection& conn, uint16_t code) override;
+  expected<void, ErrorCode> handle_data_received(Connection& conn) override;
+  expected<void, ErrorCode> handle_send_request(Connection& conn, std::string_view payload) override;
+  expected<void, ErrorCode> handle_close_request(Connection& conn, uint16_t code) override;
   ConnectionState get_state() const override { return ConnectionState::kOpen; }
 };
 
 class ClosingState : public ProtocolHandler {
  public:
-  void handle_data_received(Connection& conn) override;
-  void handle_send_request(Connection& conn, std::string_view payload) override;
-  void handle_close_request(Connection& conn, uint16_t code) override;
+  expected<void, ErrorCode> handle_data_received(Connection& conn) override;
+  expected<void, ErrorCode> handle_send_request(Connection& conn, std::string_view payload) override;
+  expected<void, ErrorCode> handle_close_request(Connection& conn, uint16_t code) override;
   ConnectionState get_state() const override { return ConnectionState::kClosing; }
 };
 
 class ClosedState : public ProtocolHandler {
  public:
-  void handle_data_received(Connection& conn) override;
-  void handle_send_request(Connection& conn, std::string_view payload) override;
-  void handle_close_request(Connection& conn, uint16_t code) override;
+  expected<void, ErrorCode> handle_data_received(Connection& conn) override;
+  expected<void, ErrorCode> handle_send_request(Connection& conn, std::string_view payload) override;
+  expected<void, ErrorCode> handle_close_request(Connection& conn, uint16_t code) override;
   ConnectionState get_state() const override { return ConnectionState::kClosed; }
 };
 

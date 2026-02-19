@@ -1,11 +1,13 @@
 #pragma once
 
 #include "connection.hpp"
+#include "connection_pool.hpp"
 #include "vocabulary.hpp"
 
 #include <cstdint>
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <poll.h>
@@ -14,7 +16,22 @@
 namespace ewss {
 
 // ============================================================================
-// Server (Reactor pattern)
+// TCP Tuning Configuration
+// ============================================================================
+
+struct TcpTuning {
+  bool tcp_nodelay = false;     // Disable Nagle algorithm
+  bool tcp_quickack = false;    // Reduce ACK delay (Linux-specific)
+  bool so_keepalive = false;    // Enable TCP keepalive
+
+  // Keepalive parameters (Linux-specific, effective when so_keepalive=true)
+  int keepalive_idle_s = 60;    // Seconds before first keepalive probe
+  int keepalive_interval_s = 10;  // Seconds between probes
+  int keepalive_count = 5;      // Max probes before dropping connection
+};
+
+// ============================================================================
+// Server (Reactor pattern with writev + monitoring)
 // ============================================================================
 
 class Server {
@@ -41,6 +58,16 @@ class Server {
     return *this;
   }
 
+  Server& set_tcp_tuning(const TcpTuning& tuning) {
+    tcp_tuning_ = tuning;
+    return *this;
+  }
+
+  Server& set_use_writev(bool enable) {
+    use_writev_ = enable;
+    return *this;
+  }
+
   // Callbacks
   std::function<void(const ConnPtr&)> on_connect;
   std::function<void(const ConnPtr&, std::string_view)> on_message;
@@ -50,30 +77,36 @@ class Server {
   // Status
   size_t get_connection_count() const { return connections_.size(); }
 
+  // Performance monitoring
+  const ServerStats& stats() const { return stats_; }
+  void reset_stats() { stats_.reset(); }
+
   // Get error statistics (for monitoring)
-  uint64_t get_total_socket_errors() const { return total_socket_errors_; }
-  uint64_t get_total_handshake_errors() const { return total_handshake_errors_; }
+  uint64_t get_total_socket_errors() const { return stats_.socket_errors.load(); }
+  uint64_t get_total_handshake_errors() const { return stats_.handshake_errors.load(); }
 
  private:
   uint16_t port_;
   std::string bind_addr_;
-  int server_sock_ = -1;  // Native socket instead of sockpp
+  int server_sock_ = -1;
   bool is_running_ = false;
+  bool use_writev_ = true;  // Default: use writev for zero-copy
 
   std::vector<ConnPtr> connections_;
   size_t max_connections_ = 1000;
   int poll_timeout_ms_ = 1000;
+  TcpTuning tcp_tuning_;
 
   uint64_t next_conn_id_ = 1;
 
-  // Error statistics
-  uint64_t total_socket_errors_ = 0;
-  uint64_t total_handshake_errors_ = 0;
+  // Performance monitoring
+  ServerStats stats_;
 
   // Internal methods
   expected<void, ErrorCode> accept_connection();
   void handle_connection_io(ConnPtr& conn, const pollfd& pfd);
   void remove_closed_connections();
+  void apply_tcp_tuning(int fd);
   void log_info(const std::string& msg);
   void log_error(const std::string& msg);
 };

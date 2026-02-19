@@ -13,16 +13,20 @@
 #include <sockpp/tcp_socket.h>
 #include <string>
 #include <string_view>
+#include <sys/uio.h>  // writev
 #include <vector>
 
 namespace ewss {
+
+// Cache line size for ARM/x86
+static constexpr size_t kCacheLine = 64;
 
 // ============================================================================
 // RingBuffer (Circular buffer for fixed memory allocation)
 // ============================================================================
 
 template <typename T, size_t Size>
-class RingBuffer {
+class alignas(kCacheLine) RingBuffer {
  public:
   static constexpr size_t kCapacity = Size;
 
@@ -79,12 +83,39 @@ class RingBuffer {
   std::string_view view() const {
     if (empty())
       return {};
-    // Note: This is simplified; real ringbuffer may wrap
     return std::string_view(reinterpret_cast<const char*>(buffer_.data() + read_idx_), count_);
   }
 
+  // Fill iovec for writev (scatter/gather IO, zero-copy send)
+  // Returns number of iovec entries filled (1 or 2)
+  size_t fill_iovec(struct iovec* iov, size_t max_iov) const {
+    if (empty() || max_iov == 0) return 0;
+
+    size_t contiguous = kCapacity - read_idx_;
+    if (contiguous >= count_) {
+      // Data is contiguous
+      iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
+      iov[0].iov_len = count_;
+      return 1;
+    }
+
+    if (max_iov < 2) {
+      // Only one iovec available, return first chunk
+      iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
+      iov[0].iov_len = contiguous;
+      return 1;
+    }
+
+    // Data wraps around: two chunks
+    iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
+    iov[0].iov_len = contiguous;
+    iov[1].iov_base = const_cast<T*>(buffer_.data());
+    iov[1].iov_len = count_ - contiguous;
+    return 2;
+  }
+
  private:
-  std::array<T, kCapacity> buffer_{};
+  alignas(kCacheLine) std::array<T, kCapacity> buffer_{};
   size_t read_idx_ = 0;
   size_t write_idx_ = 0;
   size_t count_ = 0;
@@ -94,7 +125,7 @@ class RingBuffer {
 // Connection (Manages socket, buffers, and protocol state)
 // ============================================================================
 
-class Connection : public std::enable_shared_from_this<Connection> {
+class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Connection> {
  public:
   // Static configuration
   static constexpr size_t kRxBufferSize = 4096;
@@ -131,6 +162,9 @@ class Connection : public std::enable_shared_from_this<Connection> {
   bool is_closed() const;
 
   bool has_data_to_send() const { return !tx_buffer_.empty(); }
+
+  // writev-based zero-copy send (scatter/gather IO)
+  expected<void, ErrorCode> handle_write_vectored();
 
   int get_fd() const { return socket_.handle(); }
 

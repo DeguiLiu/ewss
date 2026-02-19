@@ -28,6 +28,10 @@ CTestTestfile.cmake
 *.so
 *.dylib
 *.exe
+echo_server
+broadcast_server
+perf_server
+test_utils
 
 # Python
 __pycache__/
@@ -37,3 +41,10 @@ __pycache__/
 # Coverage
 coverage/
 *.lcov
+
+# Embedded repos
+streaming-arch-demo/
+
+# sockpp build artifacts
+libsockpp*
+sockpp/

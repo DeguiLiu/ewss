@@ -6,6 +6,7 @@
 #include <vector>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -56,6 +57,7 @@ Server::~Server() {
 
 void Server::run() {
   is_running_ = true;
+  stats_.reset();
   log_info("Server starting...");
 
   while (is_running_) {
@@ -74,23 +76,41 @@ void Server::run() {
       fds.push_back({(int)conn->get_fd(), events, 0});
     }
 
-    // Poll
+    // Poll with latency tracking
+    auto poll_start = std::chrono::steady_clock::now();
     int ret = ::poll(fds.data(), fds.size(), poll_timeout_ms_);
+    auto poll_end = std::chrono::steady_clock::now();
+
+    uint64_t poll_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(poll_end - poll_start).count());
+    stats_.last_poll_latency_us.store(poll_us, std::memory_order_relaxed);
+    uint64_t prev_max = stats_.max_poll_latency_us.load(std::memory_order_relaxed);
+    if (poll_us > prev_max) {
+      stats_.max_poll_latency_us.store(poll_us, std::memory_order_relaxed);
+    }
+
     if (ret < 0) {
       log_error("Poll error: " + std::string(strerror(errno)));
       break;
     }
 
     if (ret == 0) {
-      // Timeout
       continue;
     }
 
-    // Handle new connections
+    // Handle new connections (with overload protection)
     if (fds[0].revents & POLLIN) {
-      auto accept_result = accept_connection();
-      if (!accept_result.has_value() && accept_result.get_error() != ErrorCode::kSocketError) {
-        // Log the error but continue
+      if (stats_.is_overloaded(max_connections_)) {
+        stats_.rejected_connections.fetch_add(1, std::memory_order_relaxed);
+        // Accept and immediately close to drain the queue
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int reject_sock = accept(server_sock_, (struct sockaddr*)&client_addr, &client_addr_len);
+        if (reject_sock >= 0) {
+          close(reject_sock);
+        }
+      } else {
+        accept_connection();
       }
     }
 
@@ -111,6 +131,7 @@ void Server::run() {
 expected<void, ErrorCode> Server::accept_connection() {
   if (connections_.size() >= max_connections_) {
     log_error("Max connections reached");
+    stats_.rejected_connections.fetch_add(1, std::memory_order_relaxed);
     return expected<void, ErrorCode>::error(ErrorCode::kMaxConnectionsExceeded);
   }
 
@@ -122,7 +143,7 @@ expected<void, ErrorCode> Server::accept_connection() {
     int err = errno;
     if (err != EAGAIN && err != EWOULDBLOCK) {
       log_error("Accept error: " + std::string(strerror(err)));
-      total_socket_errors_++;
+      stats_.socket_errors.fetch_add(1, std::memory_order_relaxed);
       return expected<void, ErrorCode>::error(ErrorCode::kSocketError);
     }
     return expected<void, ErrorCode>::success();
@@ -130,6 +151,9 @@ expected<void, ErrorCode> Server::accept_connection() {
 
   // Set non-blocking
   fcntl(client_sock, F_SETFL, O_NONBLOCK);
+
+  // Apply TCP tuning to client socket
+  apply_tcp_tuning(client_sock);
 
   auto conn = std::make_shared<Connection>(client_sock);
 
@@ -140,6 +164,9 @@ expected<void, ErrorCode> Server::accept_connection() {
   conn->on_error = on_error;
 
   connections_.push_back(conn);
+
+  stats_.total_connections.fetch_add(1, std::memory_order_relaxed);
+  stats_.active_connections.fetch_add(1, std::memory_order_relaxed);
 
   log_info("New connection: " + std::to_string(connections_.size()) + " active connections");
   return expected<void, ErrorCode>::success();
@@ -154,7 +181,10 @@ void Server::handle_connection_io(ConnPtr& conn, const pollfd& pfd) {
   }
 
   if (pfd.revents & POLLOUT) {
-    auto write_result = conn->handle_write();
+    // Use writev for zero-copy send when enabled
+    auto write_result = use_writev_
+        ? conn->handle_write_vectored()
+        : conn->handle_write();
     if (!write_result.has_value()) {
       conn->close();
     }
@@ -166,9 +196,14 @@ void Server::handle_connection_io(ConnPtr& conn, const pollfd& pfd) {
 }
 
 void Server::remove_closed_connections() {
+  size_t before = connections_.size();
   connections_.erase(
       std::remove_if(connections_.begin(), connections_.end(), [](const ConnPtr& c) { return c->is_closed(); }),
       connections_.end());
+  size_t removed = before - connections_.size();
+  if (removed > 0) {
+    stats_.active_connections.fetch_sub(removed, std::memory_order_relaxed);
+  }
 }
 
 void Server::log_info(const std::string& msg) {
@@ -177,6 +212,37 @@ void Server::log_info(const std::string& msg) {
 
 void Server::log_error(const std::string& msg) {
   std::cerr << "[EWSS ERROR] " << msg << std::endl;
+}
+
+void Server::apply_tcp_tuning(int fd) {
+  int opt = 1;
+
+  if (tcp_tuning_.tcp_nodelay) {
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+  }
+
+#ifdef TCP_QUICKACK
+  if (tcp_tuning_.tcp_quickack) {
+    setsockopt(fd, IPPROTO_TCP, TCP_QUICKACK, &opt, sizeof(opt));
+  }
+#endif
+
+  if (tcp_tuning_.so_keepalive) {
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
+
+#ifdef TCP_KEEPIDLE
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
+               &tcp_tuning_.keepalive_idle_s, sizeof(tcp_tuning_.keepalive_idle_s));
+#endif
+#ifdef TCP_KEEPINTVL
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL,
+               &tcp_tuning_.keepalive_interval_s, sizeof(tcp_tuning_.keepalive_interval_s));
+#endif
+#ifdef TCP_KEEPCNT
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,
+               &tcp_tuning_.keepalive_count, sizeof(tcp_tuning_.keepalive_count));
+#endif
+  }
 }
 
 }  // namespace ewss

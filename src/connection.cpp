@@ -89,6 +89,38 @@ expected<void, ErrorCode> Connection::handle_write() {
   return expected<void, ErrorCode>::success();
 }
 
+expected<void, ErrorCode> Connection::handle_write_vectored() {
+  if (tx_buffer_.empty()) {
+    last_error_code_ = ErrorCode::kOk;
+    return expected<void, ErrorCode>::success();
+  }
+
+  // Use writev for zero-copy scatter/gather IO
+  struct iovec iov[2];
+  size_t iov_count = tx_buffer_.fill_iovec(iov, 2);
+
+  if (iov_count == 0) {
+    last_error_code_ = ErrorCode::kOk;
+    return expected<void, ErrorCode>::success();
+  }
+
+  ssize_t n = ::writev(socket_.handle(), iov, static_cast<int>(iov_count));
+  if (n > 0) {
+    tx_buffer_.advance(static_cast<size_t>(n));
+    last_error_code_ = ErrorCode::kOk;
+    return expected<void, ErrorCode>::success();
+  } else if (n < 0) {
+    int err = errno;
+    if (err != EAGAIN && err != EWOULDBLOCK) {
+      last_error_code_ = ErrorCode::kSocketError;
+      log_error("writev error: " + std::string(strerror(err)));
+      return expected<void, ErrorCode>::error(ErrorCode::kSocketError);
+    }
+  }
+  last_error_code_ = ErrorCode::kOk;
+  return expected<void, ErrorCode>::success();
+}
+
 void Connection::send(std::string_view payload, bool binary) {
   if (get_state() != ConnectionState::kOpen) {
     log_error("Cannot send: connection not open");
@@ -323,9 +355,8 @@ bool Connection::is_handshake_complete(std::string_view data) const {
   return data.find("\r\n\r\n") != std::string::npos;
 }
 
-void Connection::log_error(const std::string& msg) {
-  // Just log to stderr, don't call on_error as it doesn't take a message
-  // on_error will be called by the caller if needed
+void Connection::log_error(const std::string& /* msg */) {
+  // Placeholder: integrate with newosp async logger in future
 }
 
 // ============================================================================
@@ -341,12 +372,13 @@ expected<void, ErrorCode> HandshakeState::handle_data_received(Connection& conn)
   return result;
 }
 
-expected<void, ErrorCode> HandshakeState::handle_send_request(Connection& conn, std::string_view payload) {
-  // Cannot send before handshake is complete
+expected<void, ErrorCode> HandshakeState::handle_send_request(
+    Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kInvalidState);
 }
 
-expected<void, ErrorCode> HandshakeState::handle_close_request(Connection& conn, uint16_t code) {
+expected<void, ErrorCode> HandshakeState::handle_close_request(
+    Connection& conn, uint16_t /* code */) {
   conn.socket_.close();
   conn.transition_to_state(ConnectionState::kClosed);
   return expected<void, ErrorCode>::success();
@@ -357,19 +389,20 @@ expected<void, ErrorCode> OpenState::handle_data_received(Connection& conn) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> OpenState::handle_send_request(Connection& conn, std::string_view payload) {
+expected<void, ErrorCode> OpenState::handle_send_request(
+    Connection& conn, std::string_view payload) {
   conn.write_frame(payload, ws::OpCode::kText);
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> OpenState::handle_close_request(Connection& conn, uint16_t code) {
+expected<void, ErrorCode> OpenState::handle_close_request(
+    Connection& conn, uint16_t code) {
   conn.write_close_frame(code);
   conn.transition_to_state(ConnectionState::kClosing);
   return expected<void, ErrorCode>::success();
 }
 
 expected<void, ErrorCode> ClosingState::handle_data_received(Connection& conn) {
-  // Wait for close frame from peer or timeout
   uint8_t temp[1024];
   size_t len = conn.rx_buffer_.peek(temp, sizeof(temp));
 
@@ -386,28 +419,28 @@ expected<void, ErrorCode> ClosingState::handle_data_received(Connection& conn) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> ClosingState::handle_send_request(Connection& conn, std::string_view payload) {
-  // Cannot send after close has been initiated
+expected<void, ErrorCode> ClosingState::handle_send_request(
+    Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kInvalidState);
 }
 
-expected<void, ErrorCode> ClosingState::handle_close_request(Connection& conn, uint16_t code) {
-  // Already closing
+expected<void, ErrorCode> ClosingState::handle_close_request(
+    Connection& /* conn */, uint16_t /* code */) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> ClosedState::handle_data_received(Connection& conn) {
-  // Connection is closed
+expected<void, ErrorCode> ClosedState::handle_data_received(
+    Connection& /* conn */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 
-expected<void, ErrorCode> ClosedState::handle_send_request(Connection& conn, std::string_view payload) {
-  // Connection is closed
+expected<void, ErrorCode> ClosedState::handle_send_request(
+    Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 
-expected<void, ErrorCode> ClosedState::handle_close_request(Connection& conn, uint16_t code) {
-  // Already closed
+expected<void, ErrorCode> ClosedState::handle_close_request(
+    Connection& /* conn */, uint16_t /* code */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 
