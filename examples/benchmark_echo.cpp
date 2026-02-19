@@ -3,7 +3,7 @@
 //
 // Usage: ./benchmark_echo [num_clients] [messages_per_client] [payload_size]
 
-#include "ewss/server.hpp"
+#include "ewss.hpp"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

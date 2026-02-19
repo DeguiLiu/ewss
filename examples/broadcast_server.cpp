@@ -1,4 +1,4 @@
-#include "ewss/server.hpp"
+#include "ewss.hpp"
 #include <iostream>
 #include <memory>
 #include <vector>

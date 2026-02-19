@@ -16,7 +16,7 @@
  *   < echo: hello
  */
 
-#include "ewss/server.hpp"
+#include "ewss.hpp"
 #include <iostream>
 #include <iomanip>
 #include <chrono>

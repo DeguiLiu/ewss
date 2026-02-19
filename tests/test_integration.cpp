@@ -1,5 +1,4 @@
-#include "ewss/server.hpp"
-#include "ewss/utils.hpp"
+#include "ewss.hpp"
 
 #include <cstring>
 

@@ -1,4 +1,4 @@
-#include "ewss/connection_pool.hpp"
+#include "ewss.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 

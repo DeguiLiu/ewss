@@ -29,20 +29,18 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(sockpp)
 
-# Main library (header-only with some .cpp files)
-file(GLOB SOURCE_FILES "src/*.cpp")
-
-add_library(ewss ${SOURCE_FILES})
-target_include_directories(ewss PUBLIC
+# Main library (header-only, single file: include/ewss.hpp)
+add_library(ewss INTERFACE)
+target_include_directories(ewss INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(ewss PUBLIC Sockpp::sockpp)
-target_compile_features(ewss PUBLIC cxx_std_17)
+target_link_libraries(ewss INTERFACE Sockpp::sockpp)
+target_compile_features(ewss INTERFACE cxx_std_17)
 
-# Apply -fno-exceptions/-fno-rtti only to ewss target (not to third-party deps like sockpp)
+# Apply -fno-exceptions/-fno-rtti to ewss consumers
 if(EWSS_NO_EXCEPTIONS)
-  target_compile_options(ewss PUBLIC -fno-exceptions -fno-rtti)
+  target_compile_options(ewss INTERFACE -fno-exceptions -fno-rtti)
 endif()
 
 # Tests
@@ -79,4 +77,4 @@ endif()
 
 # Installation
 include(GNUInstallDirs)
-install(DIRECTORY include/ewss DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES include/ewss.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
