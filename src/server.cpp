@@ -61,24 +61,24 @@ void Server::run() {
   log_info("Server starting...");
 
   while (is_running_) {
-    // Prepare poll FDs
-    std::vector<pollfd> fds;
+    // Prepare poll FDs (zero allocation: use pre-allocated array)
+    size_t nfds = 0;
 
     // Add acceptor socket
-    fds.push_back({server_sock_, POLLIN, 0});
+    poll_fds_[nfds++] = {server_sock_, POLLIN, 0};
 
     // Add client sockets
-    for (auto& conn : connections_) {
+    for (uint32_t i = 0; i < connections_.size(); ++i) {
       short events = POLLIN;
-      if (conn->has_data_to_send()) {
+      if (connections_[i]->has_data_to_send()) {
         events |= POLLOUT;
       }
-      fds.push_back({static_cast<int>(conn->get_fd()), events, 0});
+      poll_fds_[nfds++] = {static_cast<int>(connections_[i]->get_fd()), events, 0};
     }
 
     // Poll with latency tracking
     auto poll_start = std::chrono::steady_clock::now();
-    int ret = ::poll(fds.data(), fds.size(), poll_timeout_ms_);
+    int ret = ::poll(poll_fds_.data(), static_cast<nfds_t>(nfds), poll_timeout_ms_);
     auto poll_end = std::chrono::steady_clock::now();
 
     uint64_t poll_us = static_cast<uint64_t>(
@@ -90,7 +90,7 @@ void Server::run() {
     }
 
     if (ret < 0) {
-      log_error("Poll error: " + std::string(strerror(errno)));
+      log_error("Poll error");
       break;
     }
 
@@ -99,15 +99,16 @@ void Server::run() {
     }
 
     // Handle new connections (with overload protection)
-    if (fds[0].revents & POLLIN) {
+    if (poll_fds_[0].revents & POLLIN) {
       if (stats_.is_overloaded(max_connections_)) {
         stats_.rejected_connections.fetch_add(1, std::memory_order_relaxed);
         // Accept and immediately close to drain the queue
         struct sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
-        int reject_sock = accept(server_sock_, (struct sockaddr*)&client_addr, &client_addr_len);
+        int reject_sock = accept(server_sock_,
+            reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
         if (reject_sock >= 0) {
-          close(reject_sock);
+          ::close(reject_sock);
         }
       } else {
         accept_connection();
@@ -115,10 +116,10 @@ void Server::run() {
     }
 
     // Handle client I/O
-    for (size_t i = 1; i < fds.size(); ++i) {
+    for (size_t i = 1; i < nfds; ++i) {
       if (i - 1 >= connections_.size())
         break;
-      handle_connection_io(connections_[i - 1], fds[i]);
+      handle_connection_io(connections_[i - 1], poll_fds_[i]);
     }
 
     // Remove closed connections
@@ -129,7 +130,7 @@ void Server::run() {
 }
 
 expected<void, ErrorCode> Server::accept_connection() {
-  if (connections_.size() >= max_connections_) {
+  if (connections_.size() >= max_connections_ || connections_.full()) {
     log_error("Max connections reached");
     stats_.rejected_connections.fetch_add(1, std::memory_order_relaxed);
     return expected<void, ErrorCode>::error(ErrorCode::kMaxConnectionsExceeded);
@@ -137,12 +138,13 @@ expected<void, ErrorCode> Server::accept_connection() {
 
   struct sockaddr_in client_addr;
   socklen_t client_addr_len = sizeof(client_addr);
-  int client_sock = accept(server_sock_, (struct sockaddr*)&client_addr, &client_addr_len);
+  int client_sock = accept(server_sock_,
+      reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
 
   if (client_sock < 0) {
     int err = errno;
     if (err != EAGAIN && err != EWOULDBLOCK) {
-      log_error("Accept error: " + std::string(strerror(err)));
+      log_error("Accept error");
       stats_.socket_errors.fetch_add(1, std::memory_order_relaxed);
       return expected<void, ErrorCode>::error(ErrorCode::kSocketError);
     }
@@ -168,7 +170,6 @@ expected<void, ErrorCode> Server::accept_connection() {
   stats_.total_connections.fetch_add(1, std::memory_order_relaxed);
   stats_.active_connections.fetch_add(1, std::memory_order_relaxed);
 
-  log_info("New connection: " + std::to_string(connections_.size()) + " active connections");
   return expected<void, ErrorCode>::success();
 }
 
@@ -196,11 +197,21 @@ void Server::handle_connection_io(ConnPtr& conn, const pollfd& pfd) {
 }
 
 void Server::remove_closed_connections() {
-  size_t before = connections_.size();
-  connections_.erase(
-      std::remove_if(connections_.begin(), connections_.end(), [](const ConnPtr& c) { return c->is_closed(); }),
-      connections_.end());
-  size_t removed = before - connections_.size();
+  // Swap-and-pop removal for FixedVector (O(n), no iterator invalidation issues)
+  uint32_t removed = 0;
+  uint32_t i = 0;
+  while (i < connections_.size()) {
+    if (connections_[i]->is_closed()) {
+      // Swap with last element and pop
+      if (i < connections_.size() - 1) {
+        connections_[i] = static_cast<ConnPtr&&>(connections_[connections_.size() - 1]);
+      }
+      connections_.pop_back();
+      ++removed;
+    } else {
+      ++i;
+    }
+  }
   if (removed > 0) {
     stats_.active_connections.fetch_sub(removed, std::memory_order_relaxed);
   }

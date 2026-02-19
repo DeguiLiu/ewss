@@ -8,11 +8,11 @@
 #include <cstdint>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <poll.h>
-#include <vector>
 
 namespace ewss {
 
@@ -86,6 +86,9 @@ class Server {
   uint64_t get_total_socket_errors() const { return stats_.socket_errors.load(); }
   uint64_t get_total_handshake_errors() const { return stats_.handshake_errors.load(); }
 
+  // Maximum supported connections (compile-time fixed)
+  static constexpr size_t kMaxConnections = 64;
+
  private:
   uint16_t port_;
   std::string bind_addr_;
@@ -93,12 +96,15 @@ class Server {
   bool is_running_ = false;
   bool use_writev_ = true;  // Default: use writev for zero-copy
 
-  std::vector<ConnPtr> connections_;
-  size_t max_connections_ = 1000;
+  FixedVector<ConnPtr, kMaxConnections> connections_;
+  size_t max_connections_ = 50;
   int poll_timeout_ms_ = 1000;
   TcpTuning tcp_tuning_;
 
   uint64_t next_conn_id_ = 1;
+
+  // Pre-allocated pollfd array (1 for server + kMaxConnections for clients)
+  std::array<pollfd, kMaxConnections + 1> poll_fds_{};
 
   // Performance monitoring
   ServerStats stats_;

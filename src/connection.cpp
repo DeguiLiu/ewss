@@ -7,16 +7,22 @@
 
 namespace ewss {
 
+// Static protocol handler instances (zero heap allocation on state transitions)
+static HandshakeState g_handshake_state;
+static OpenState g_open_state;
+static ClosingState g_closing_state;
+static ClosedState g_closed_state;
+
 static uint64_t g_next_conn_id = 1;
 
 Connection::Connection(sockpp::tcp_socket&& sock) : id_(g_next_conn_id++), socket_(std::move(sock)) {
   socket_.set_non_blocking(true);
-  protocol_handler_ = std::make_unique<HandshakeState>();
+  protocol_handler_ = &g_handshake_state;
 }
 
 Connection::Connection(int fd) : id_(g_next_conn_id++), socket_(fd) {
   socket_.set_non_blocking(true);
-  protocol_handler_ = std::make_unique<HandshakeState>();
+  protocol_handler_ = &g_handshake_state;
 }
 
 Connection::~Connection() {
@@ -30,31 +36,31 @@ ConnectionState Connection::get_state() const {
 }
 
 expected<void, ErrorCode> Connection::handle_read() {
-  uint8_t temp[kTempReadSize];
-  ssize_t n = socket_.read(temp, sizeof(temp));
+  // Zero-copy read: readv directly into RingBuffer's writable regions
+  struct iovec iov[2];
+  size_t iov_count = rx_buffer_.fill_iovec_write(iov, 2);
+
+  if (iov_count == 0) {
+    last_error_code_ = ErrorCode::kBufferFull;
+    log_error("RX buffer full");
+    return expected<void, ErrorCode>::error(ErrorCode::kBufferFull);
+  }
+
+  ssize_t n = ::readv(socket_.handle(), iov, static_cast<int>(iov_count));
 
   if (n > 0) {
-    // Append data to rx_buffer
-    if (!rx_buffer_.push(temp, n)) {
-      last_error_code_ = ErrorCode::kBufferFull;
-      log_error("RX buffer overflow");
-      return expected<void, ErrorCode>::error(ErrorCode::kBufferFull);
-    }
-
-    // Let protocol handler process the data
+    rx_buffer_.commit_write(static_cast<size_t>(n));
     protocol_handler_->handle_data_received(*this);
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::success();
   } else if (n == 0) {
-    // Connection closed by peer
     last_error_code_ = ErrorCode::kConnectionClosed;
     return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
   } else {
-    // Error
     int err = errno;
     if (err != EAGAIN && err != EWOULDBLOCK) {
       last_error_code_ = ErrorCode::kSocketError;
-      log_error("Read error: " + std::string(strerror(err)));
+      log_error("Read error");
       return expected<void, ErrorCode>::error(ErrorCode::kSocketError);
     }
     last_error_code_ = ErrorCode::kOk;
@@ -150,19 +156,19 @@ bool Connection::is_closed() const {
 void Connection::transition_to_state(ConnectionState state) {
   switch (state) {
     case ConnectionState::kHandshaking:
-      protocol_handler_ = std::make_unique<HandshakeState>();
+      protocol_handler_ = &g_handshake_state;
       break;
     case ConnectionState::kOpen:
-      protocol_handler_ = std::make_unique<OpenState>();
+      protocol_handler_ = &g_open_state;
       if (on_open) {
         on_open(shared_from_this());
       }
       break;
     case ConnectionState::kClosing:
-      protocol_handler_ = std::make_unique<ClosingState>();
+      protocol_handler_ = &g_closing_state;
       break;
     case ConnectionState::kClosed:
-      protocol_handler_ = std::make_unique<ClosedState>();
+      protocol_handler_ = &g_closed_state;
       if (on_close) {
         on_close(shared_from_this(), true);
       }
@@ -342,23 +348,38 @@ void Connection::parse_frames() {
 }
 
 void Connection::write_frame(std::string_view payload, ws::OpCode opcode) {
-  // Server doesn't mask outgoing frames
-  auto frame = ws::encode_frame(opcode, payload, false);
-  if (!tx_buffer_.push(frame.data(), frame.size())) {
-    log_error("TX buffer overflow");
+  // Zero-allocation frame write: header on stack, payload direct to TxBuffer
+  uint8_t header_buf[14];
+  size_t header_len = ws::encode_frame_header(
+      header_buf, opcode, payload.size(), false);
+
+  if (!tx_buffer_.push(header_buf, header_len)) {
+    log_error("TX buffer overflow (header)");
+    return;
+  }
+  if (!payload.empty()) {
+    if (!tx_buffer_.push(
+            reinterpret_cast<const uint8_t*>(payload.data()), payload.size())) {
+      log_error("TX buffer overflow (payload)");
+    }
   }
 }
 
 void Connection::write_close_frame(uint16_t code) {
-  uint8_t payload[2];
-  payload[0] = (code >> 8) & 0xFF;
-  payload[1] = code & 0xFF;
+  uint8_t close_payload[2];
+  close_payload[0] = static_cast<uint8_t>((code >> 8) & 0xFF);
+  close_payload[1] = static_cast<uint8_t>(code & 0xFF);
 
-  std::string_view payload_view(reinterpret_cast<const char*>(payload), 2);
-  auto frame = ws::encode_frame(ws::OpCode::kClose, payload_view, false);
+  uint8_t header_buf[14];
+  size_t header_len = ws::encode_frame_header(
+      header_buf, ws::OpCode::kClose, 2, false);
 
-  if (!tx_buffer_.push(frame.data(), frame.size())) {
-    log_error("TX buffer overflow");
+  if (!tx_buffer_.push(header_buf, header_len)) {
+    log_error("TX buffer overflow (close header)");
+    return;
+  }
+  if (!tx_buffer_.push(close_payload, 2)) {
+    log_error("TX buffer overflow (close payload)");
   }
 }
 

@@ -306,6 +306,34 @@ inline std::vector<uint8_t> encode_frame(OpCode opcode,
   return frame;
 }
 
+// Encode WebSocket frame header into fixed buffer (zero allocation)
+// Returns number of bytes written to header_buf (max 14 bytes)
+inline size_t encode_frame_header(uint8_t* header_buf, OpCode opcode,
+                                   size_t payload_len, bool mask = false) {
+  size_t pos = 0;
+  header_buf[pos++] = 0x80 | static_cast<uint8_t>(opcode);
+
+  if (payload_len < 126) {
+    header_buf[pos++] = static_cast<uint8_t>(
+        (mask ? 0x80 : 0x00) | payload_len);
+  } else if (payload_len < 65536) {
+    header_buf[pos++] = static_cast<uint8_t>((mask ? 0x80 : 0x00) | 126);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 8) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>(payload_len & 0xFF);
+  } else {
+    header_buf[pos++] = static_cast<uint8_t>((mask ? 0x80 : 0x00) | 127);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 56) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 48) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 40) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 32) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 24) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 16) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>((payload_len >> 8) & 0xFF);
+    header_buf[pos++] = static_cast<uint8_t>(payload_len & 0xFF);
+  }
+  return pos;
+}
+
 }  // namespace ws
 
 }  // namespace ewss

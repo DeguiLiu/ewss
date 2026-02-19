@@ -84,32 +84,76 @@ class alignas(kCacheLine) RingBuffer {
     return std::string_view(reinterpret_cast<const char*>(buffer_.data() + read_idx_), count_);
   }
 
-  // Fill iovec for writev (scatter/gather IO, zero-copy send)
+  // Fill iovec for writev (scatter/gather IO, zero-copy send from read side)
   // Returns number of iovec entries filled (1 or 2)
   size_t fill_iovec(struct iovec* iov, size_t max_iov) const {
     if (empty() || max_iov == 0) return 0;
 
     size_t contiguous = kCapacity - read_idx_;
     if (contiguous >= count_) {
-      // Data is contiguous
       iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
       iov[0].iov_len = count_;
       return 1;
     }
 
     if (max_iov < 2) {
-      // Only one iovec available, return first chunk
       iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
       iov[0].iov_len = contiguous;
       return 1;
     }
 
-    // Data wraps around: two chunks
     iov[0].iov_base = const_cast<T*>(buffer_.data() + read_idx_);
     iov[0].iov_len = contiguous;
     iov[1].iov_base = const_cast<T*>(buffer_.data());
     iov[1].iov_len = count_ - contiguous;
     return 2;
+  }
+
+  // Fill iovec for readv (zero-copy receive into write side)
+  // Returns number of iovec entries filled (1 or 2)
+  size_t fill_iovec_write(struct iovec* iov, size_t max_iov) const {
+    size_t avail = available();
+    if (avail == 0 || max_iov == 0) return 0;
+
+    size_t contiguous = kCapacity - write_idx_;
+    if (contiguous >= avail) {
+      iov[0].iov_base = const_cast<T*>(buffer_.data() + write_idx_);
+      iov[0].iov_len = avail;
+      return 1;
+    }
+
+    if (max_iov < 2) {
+      iov[0].iov_base = const_cast<T*>(buffer_.data() + write_idx_);
+      iov[0].iov_len = contiguous;
+      return 1;
+    }
+
+    iov[0].iov_base = const_cast<T*>(buffer_.data() + write_idx_);
+    iov[0].iov_len = contiguous;
+    iov[1].iov_base = const_cast<T*>(buffer_.data());
+    iov[1].iov_len = avail - contiguous;
+    return 2;
+  }
+
+  // Commit bytes written via fill_iovec_write (after readv returns)
+  void commit_write(size_t len) {
+    if (len > available()) len = available();
+    write_idx_ = (write_idx_ + len) % kCapacity;
+    count_ += len;
+  }
+
+  // Get contiguous readable data pointer and length (for zero-copy parsing)
+  // Returns pointer to first contiguous chunk; sets out_len to its length.
+  // If data wraps, only the first chunk is returned. Call advance() then
+  // call again for the second chunk.
+  const T* read_ptr(size_t* out_len) const {
+    if (empty()) {
+      *out_len = 0;
+      return nullptr;
+    }
+    size_t contiguous = kCapacity - read_idx_;
+    *out_len = (contiguous >= count_) ? count_ : contiguous;
+    return buffer_.data() + read_idx_;
   }
 
  private:
@@ -193,7 +237,7 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   RingBuffer<uint8_t, kRxBufferSize> rx_buffer_;
   RingBuffer<uint8_t, kTxBufferSize> tx_buffer_;
 
-  std::unique_ptr<ProtocolHandler> protocol_handler_;
+  ProtocolHandler* protocol_handler_ = nullptr;  // Points to static instances
 
   // --- Protocol state ---
 
