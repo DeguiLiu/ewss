@@ -1,4 +1,7 @@
-#pragma once
+#ifndef EWSS_CONNECTION_POOL_HPP_
+#define EWSS_CONNECTION_POOL_HPP_
+
+#include "vocabulary.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -10,14 +13,11 @@
 namespace ewss {
 
 // ============================================================================
-// ConnectionPool - O(1) acquire/release, zero heap allocation at runtime
+// ObjectPool - O(1) acquire/release, zero heap allocation at runtime
 // ============================================================================
 
-// Cache line size for ARM/x86
-static constexpr size_t kCacheLineSize = 64;
-
 template <typename T, size_t MaxSlots>
-class alignas(kCacheLineSize) ObjectPool {
+class alignas(kCacheLine) ObjectPool {
  public:
   ObjectPool() { reset(); }
 
@@ -68,7 +68,7 @@ class alignas(kCacheLineSize) ObjectPool {
 
  private:
   // Storage for objects (aligned)
-  alignas(kCacheLineSize) uint8_t slots_[MaxSlots * sizeof(T)]{};
+  alignas(kCacheLine) uint8_t slots_[MaxSlots * sizeof(T)]{};
 
   // Free list (stack-based)
   std::array<size_t, MaxSlots> free_list_{};
@@ -82,7 +82,7 @@ class alignas(kCacheLineSize) ObjectPool {
 // ServerStats - Atomic performance counters
 // ============================================================================
 
-struct alignas(kCacheLineSize) ServerStats {
+struct alignas(kCacheLine) ServerStats {
   // Throughput counters
   std::atomic<uint64_t> total_messages_in{0};
   std::atomic<uint64_t> total_messages_out{0};
@@ -134,3 +134,5 @@ struct alignas(kCacheLineSize) ServerStats {
 };
 
 }  // namespace ewss
+
+#endif  // EWSS_CONNECTION_POOL_HPP_

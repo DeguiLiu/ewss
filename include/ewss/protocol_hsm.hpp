@@ -1,4 +1,5 @@
-#pragma once
+#ifndef EWSS_PROTOCOL_HSM_HPP_
+#define EWSS_PROTOCOL_HSM_HPP_
 
 #include "vocabulary.hpp"
 
@@ -107,3 +108,5 @@ class ClosedState : public ProtocolHandler {
 };
 
 }  // namespace ewss
+
+#endif  // EWSS_PROTOCOL_HSM_HPP_

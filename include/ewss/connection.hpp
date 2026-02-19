@@ -1,4 +1,5 @@
-#pragma once
+#ifndef EWSS_CONNECTION_HPP_
+#define EWSS_CONNECTION_HPP_
 
 #include "protocol_hsm.hpp"
 #include "utils.hpp"
@@ -17,9 +18,6 @@
 #include <vector>
 
 namespace ewss {
-
-// Cache line size for ARM/x86
-static constexpr size_t kCacheLine = 64;
 
 // ============================================================================
 // RingBuffer (Circular buffer for fixed memory allocation)
@@ -257,3 +255,5 @@ inline void Connection::unmask_payload(uint8_t* payload, size_t len, const uint8
 }
 
 }  // namespace ewss
+
+#endif  // EWSS_CONNECTION_HPP_

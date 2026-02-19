@@ -1,4 +1,5 @@
-#pragma once
+#ifndef EWSS_UTILS_HPP_
+#define EWSS_UTILS_HPP_
 
 #include <array>
 #include <cstdint>
@@ -105,48 +106,58 @@ class SHA1 {
   }
 
   void update(const uint8_t* data, size_t size) {
-    uint32_t r = (h_[0] >> 3) & 0x3F;
-    h_[0] += (static_cast<uint32_t>(size) << 3);
-    h_[1] += (static_cast<uint32_t>(size) >> 29);
-
     for (size_t i = 0; i < size; ++i) {
-      buffer_[r++] = data[i];
-      if (r == 64) {
+      buffer_[buf_pos_++] = data[i];
+      ++total_bytes_;
+      if (buf_pos_ == 64) {
         process_block(buffer_.data());
-        r = 0;
+        buf_pos_ = 0;
       }
     }
   }
 
   std::array<uint8_t, 20> finalize() {
-    uint32_t r = (h_[0] >> 3) & 0x3F;
-    buffer_[r++] = 0x80;
-    if (r > 56) {
-      for (size_t i = r; i < 64; ++i) buffer_[i] = 0;
-      process_block(buffer_.data());
-      r = 0;
-    }
-    for (size_t i = r; i < 56; ++i) buffer_[i] = 0;
+    // Append padding bit
+    buffer_[buf_pos_++] = 0x80;
 
-    for (int i = 0; i < 8; ++i) {
-      buffer_[56 + i] = (h_[1] >> (8 * (7 - i))) & 0xFF;
+    // If not enough room for 8-byte length, pad and process
+    if (buf_pos_ > 56) {
+      while (buf_pos_ < 64) {
+        buffer_[buf_pos_++] = 0;
+      }
+      process_block(buffer_.data());
+      buf_pos_ = 0;
+    }
+
+    // Pad to 56 bytes
+    while (buf_pos_ < 56) {
+      buffer_[buf_pos_++] = 0;
+    }
+
+    // Append total length in bits (big-endian, 64-bit)
+    uint64_t total_bits = total_bytes_ * 8;
+    for (int i = 7; i >= 0; --i) {
+      buffer_[56 + (7 - i)] = static_cast<uint8_t>((total_bits >> (i * 8)) & 0xFF);
     }
     process_block(buffer_.data());
 
+    // Produce final hash
     std::array<uint8_t, 20> result;
     for (int i = 0; i < 5; ++i) {
-      result[i * 4] = (h_[i] >> 24) & 0xFF;
-      result[i * 4 + 1] = (h_[i] >> 16) & 0xFF;
-      result[i * 4 + 2] = (h_[i] >> 8) & 0xFF;
-      result[i * 4 + 3] = h_[i] & 0xFF;
+      result[i * 4] = static_cast<uint8_t>((h_[i] >> 24) & 0xFF);
+      result[i * 4 + 1] = static_cast<uint8_t>((h_[i] >> 16) & 0xFF);
+      result[i * 4 + 2] = static_cast<uint8_t>((h_[i] >> 8) & 0xFF);
+      result[i * 4 + 3] = static_cast<uint8_t>(h_[i] & 0xFF);
     }
     return result;
   }
 
  private:
-  std::array<uint32_t, 5> h_ = {0x67452301, 0xefcdab89, 0x98badcfe,
-                                 0x10325476, 0xc3d2e1f0};
+  std::array<uint32_t, 5> h_ = {0x67452301, 0xEFCDAB89, 0x98BADCFE,
+                                 0x10325476, 0xC3D2E1F0};
   std::array<uint8_t, 64> buffer_{};
+  uint32_t buf_pos_ = 0;
+  uint64_t total_bytes_ = 0;
 
   static uint32_t rol(uint32_t x, int n) {
     return (x << n) | (x >> (32 - n));
@@ -167,19 +178,20 @@ class SHA1 {
     uint32_t a = h_[0], b = h_[1], c = h_[2], d = h_[3], e = h_[4];
 
     for (int i = 0; i < 80; ++i) {
-      uint32_t f, k;
+      uint32_t f = 0;
+      uint32_t k = 0;
       if (i < 20) {
         f = (b & c) | ((~b) & d);
-        k = 0x5a827999;
+        k = 0x5A827999;
       } else if (i < 40) {
         f = b ^ c ^ d;
-        k = 0x6ed9eba1;
+        k = 0x6ED9EBA1;
       } else if (i < 60) {
         f = (b & c) | (b & d) | (c & d);
-        k = 0x8f1bbcdc;
+        k = 0x8F1BBCDC;
       } else {
         f = b ^ c ^ d;
-        k = 0xca62c1d6;
+        k = 0xCA62C1D6;
       }
 
       uint32_t temp = rol(a, 5) + f + e + k + w[i];
@@ -295,3 +307,5 @@ inline std::vector<uint8_t> encode_frame(OpCode opcode,
 }  // namespace ws
 
 }  // namespace ewss
+
+#endif  // EWSS_UTILS_HPP_

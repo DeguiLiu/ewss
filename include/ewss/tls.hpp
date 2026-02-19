@@ -1,4 +1,5 @@
-#pragma once
+#ifndef EWSS_TLS_HPP_
+#define EWSS_TLS_HPP_
 
 // ============================================================================
 // TLS Configuration and Abstraction Layer
@@ -219,3 +220,5 @@ class TlsSession {
 #endif  // EWSS_WITH_TLS
 
 }  // namespace ewss
+
+#endif  // EWSS_TLS_HPP_

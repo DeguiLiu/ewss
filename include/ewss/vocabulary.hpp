@@ -636,6 +636,33 @@ class ScopeGuard final {
   bool active_{true};
 };
 
+// Cache line size for ARM/x86
+static constexpr size_t kCacheLine = 64;
+
+// ============================================================================
+// Logging (simple stderr output)
+// ============================================================================
+
+class Logger {
+ public:
+  enum class Level : uint8_t { kInfo = 0, kWarn, kError, kDebug };
+
+  static void log(Level level, const char* msg) {
+    static constexpr const char* kPrefix[] = {
+        "[INFO]", "[WARN]", "[ERROR]", "[DEBUG]"};
+    // Minimal implementation: stderr output
+    // Future: integrate with newosp async logger
+    (void)level;
+    (void)msg;
+    (void)kPrefix;
+  }
+};
+
 }  // namespace ewss
+
+#define EWSS_LOG_INFO(msg) ::ewss::Logger::log(::ewss::Logger::Level::kInfo, msg)
+#define EWSS_LOG_WARN(msg) ::ewss::Logger::log(::ewss::Logger::Level::kWarn, msg)
+#define EWSS_LOG_ERROR(msg) ::ewss::Logger::log(::ewss::Logger::Level::kError, msg)
+#define EWSS_LOG_DEBUG(msg) ::ewss::Logger::log(::ewss::Logger::Level::kDebug, msg)
 
 #endif  // EWSS_VOCABULARY_HPP_

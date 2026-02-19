@@ -1,4 +1,5 @@
-#pragma once
+#ifndef EWSS_SERVER_HPP_
+#define EWSS_SERVER_HPP_
 
 #include "connection.hpp"
 #include "connection_pool.hpp"
@@ -112,3 +113,5 @@ class Server {
 };
 
 }  // namespace ewss
+
+#endif  // EWSS_SERVER_HPP_

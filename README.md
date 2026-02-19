@@ -1,85 +1,64 @@
 # EWSS - Embedded WebSocket Server
 
-Lightweight, ASIO-free WebSocket server designed for embedded Linux systems (ARM). Built with modern C++17, using `sockpp` for socket management, `ringbuffer` for fixed-memory buffers, and hierarchical state machines for protocol handling.
+[![CI](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml/badge.svg)](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-7%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Repository**: https://gitee.com/liudegui/ewss
+[中文文档](README_zh.md)
 
-## Key Features
+Lightweight, ASIO-free WebSocket server for embedded Linux (ARM). C++17, poll-based Reactor, fixed-memory RingBuffers, zero-copy I/O.
 
-- **No ASIO dependency**: Direct `poll()`/`epoll()` based Reactor pattern for minimal overhead
-- **Fixed memory allocation**: RingBuffer-based TX/RX buffers eliminate memory fragmentation
-- **Hierarchical state machine**: Clean protocol state management (Handshaking, Open, Closing, Closed)
-- **Zero-copy frame handling**: Efficient WebSocket frame parsing and masking
-- **Single-threaded design**: No locks needed; suitable for embedded systems with limited resources
-- **C++17 standard**: Modern C++ with RAII resource management
-- **Header-only core**: Easy integration; core functionality can be header-only with appropriate changes
+## Features
 
-## Design Philosophy
-
-**"Explicit over implicit, static allocation over dynamic"**
-
-- All buffer sizes are compile-time configurable (`constexpr`)
-- No hidden dynamic allocations in hot paths
-- Clear, simple API with callbacks for application integration
-- Minimal dependencies (only sockpp, no Boost/ASIO/Libuv)
+- ASIO-free: poll()-based single-threaded Reactor, no Boost/Libuv dependency
+- Fixed memory: RingBuffer TX/RX (4KB/8KB per connection), no heap allocation in hot path
+- Zero-copy: writev scatter/gather I/O, string_view-based handshake parsing
+- State machine: HSM-driven WebSocket lifecycle (Handshaking/Open/Closing/Closed)
+- TCP tuning: TCP_NODELAY, TCP_QUICKACK, SO_KEEPALIVE with configurable parameters
+- Performance monitoring: atomic counters for throughput, latency, errors, overload protection
+- Optional TLS: mbedTLS integration (compile-time toggle via EWSS_WITH_TLS)
+- Cache-line aligned: alignas(64) on hot data structures for ARM/x86
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│          Server (Reactor)               │
-│  - poll() / epoll() event loop          │
-│  - manage connections                   │
-└─────────────────────────────────────────┘
-           │
-           ├─→ Connection #1
-           ├─→ Connection #2
-           └─→ Connection #N
-
-Each Connection:
-  ┌─────────────────────────────────────┐
-  │  RxBuffer (ringbuffer)              │
-  │         ↓ (parser)                  │
-  │  ProtocolHandler (state machine)    │
-  │         ↓ (callback)                │
-  │  Application (on_message)           │
-  │         ↓ (user send)               │
-  │  TxBuffer (ringbuffer)              │
-  │         ↓ (poll POLLOUT)            │
-  │  TCP Socket                         │
-  └─────────────────────────────────────┘
+Server (Reactor, poll-based)
+  |
+  +-- Connection #1 ─┐
+  +-- Connection #2  ├─ Each connection:
+  +-- Connection #N ─┘
+        RxBuffer (RingBuffer<4096>)
+            | parse
+        ProtocolHandler (HSM state machine)
+            | callback
+        Application (on_message / on_close)
+            | send
+        TxBuffer (RingBuffer<8192>)
+            | writev / write
+        TCP Socket (sockpp)
 ```
 
 ## Building
 
-### Requirements
-
-- CMake 3.14+
-- C++17 compiler (GCC 7+, Clang 5+)
-- sockpp library (auto-fetched via FetchContent)
-
-### Build Steps
+Requirements: CMake 3.14+, C++17 compiler (GCC 7+, Clang 5+)
 
 ```bash
+git clone https://github.com/DeguiLiu/ewss.git
 cd ewss
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
 ```
 
-### Build Options
+Build options:
 
-```bash
-# Disable exceptions and RTTI
-cmake .. -DEWSS_NO_EXCEPTIONS=ON
-
-# Skip tests and examples
-cmake .. -DEWSS_BUILD_TESTS=OFF -DEWSS_BUILD_EXAMPLES=OFF
-```
+| Option | Default | Description |
+|--------|---------|-------------|
+| EWSS_BUILD_TESTS | ON | Build Catch2 unit tests |
+| EWSS_BUILD_EXAMPLES | ON | Build example servers |
+| EWSS_NO_EXCEPTIONS | OFF | Disable exceptions and RTTI |
+| EWSS_WITH_TLS | OFF | Enable mbedTLS support |
 
 ## Quick Start
-
-### Echo Server Example
 
 ```cpp
 #include "ewss/server.hpp"
@@ -87,164 +66,98 @@ cmake .. -DEWSS_BUILD_TESTS=OFF -DEWSS_BUILD_EXAMPLES=OFF
 int main() {
   ewss::Server server(8080);
 
-  server.on_connect = [](const auto& conn) {
-    std::cout << "Client connected: " << conn->get_id() << std::endl;
-  };
+  // TCP tuning for low latency
+  ewss::TcpTuning tuning;
+  tuning.tcp_nodelay = true;
+  server.set_tcp_tuning(tuning);
 
   server.on_message = [](const auto& conn, std::string_view msg) {
-    std::cout << "Received: " << msg << std::endl;
-    conn->send(std::string("Echo: ") + std::string(msg));
-  };
-
-  server.on_close = [](const auto& conn, bool clean) {
-    std::cout << "Client closed" << std::endl;
+    conn->send(msg);  // Echo back
   };
 
   server.run();
-  return 0;
 }
 ```
 
-Build and run:
+Test with wscat:
 ```bash
-$ ./echo_server 8080
-[EWSS INFO] Server initialized on :8080
-[EWSS INFO] Server starting...
+wscat -c ws://localhost:8080
+> hello
+< hello
 ```
 
-Test with WebSocket client:
-```bash
-# Using wscat (npm install -g wscat)
-$ wscat -c ws://localhost:8080
-Connected (press CTRL+C to quit)
-> Hello
-< Echo: Hello
-```
-
-## API Reference
-
-### Server
+## API
 
 ```cpp
-class Server {
-  Server(uint16_t port, const std::string& bind_addr = "");
+// Server
+ewss::Server server(port);
+server.set_max_connections(50);
+server.set_tcp_tuning(tuning);
+server.set_use_writev(true);
+server.on_connect  = [](const ConnPtr&) {};
+server.on_message  = [](const ConnPtr&, std::string_view) {};
+server.on_close    = [](const ConnPtr&, bool clean) {};
+server.on_error    = [](const ConnPtr&) {};
+server.run();
 
-  void run();                                    // Start blocking event loop
-  void stop();                                   // Stop the server
-
-  Server& set_max_connections(size_t max);      // Configure max connections
-  Server& set_poll_timeout_ms(int timeout);     // Configure poll timeout
-
-  std::function<void(const ConnPtr&)> on_connect;
-  std::function<void(const ConnPtr&, std::string_view)> on_message;
-  std::function<void(const ConnPtr&, bool)> on_close;
-  std::function<void(const ConnPtr&, const std::string&)> on_error;
-
-  size_t get_connection_count() const;
-};
+// Connection
+conn->send("text message");
+conn->send_binary(binary_data);
+conn->close(1000);
+conn->get_id();
+conn->get_state();
 ```
 
-### Connection
+## Performance
 
-```cpp
-class Connection : public std::enable_shared_from_this<Connection> {
-  void send(std::string_view payload);
-  void send_binary(std::string_view payload);
-  void close(uint16_t code = 1000);
+Benchmark on x86-64 (single-threaded echo server):
 
-  bool is_closed() const;
-  bool has_data_to_send() const;
-  uint64_t get_id() const;
-  int get_fd() const;
-  ConnectionState get_state() const;
+| Metric | Value |
+|--------|-------|
+| Throughput | ~680K msg/s |
+| P50 latency | 0.015 ms |
+| P99 latency | 0.062 ms |
+| Memory per connection | ~12 KB fixed |
 
-  // Callbacks
-  std::function<void(const ConnPtr&)> on_open;
-  std::function<void(const ConnPtr&, std::string_view)> on_message;
-  std::function<void(const ConnPtr&, bool)> on_close;
-  std::function<void(const ConnPtr&)> on_error;
-};
-```
+## Header Files
+
+| File | Description |
+|------|-------------|
+| vocabulary.hpp | Error types, expected, optional, FixedVector, FixedString, FixedFunction, Logger, kCacheLine |
+| utils.hpp | Base64, SHA-1, WebSocket frame parsing/encoding |
+| protocol_hsm.hpp | Protocol state machine (Handshake/Open/Closing/Closed) |
+| connection.hpp | RingBuffer, Connection class |
+| connection_pool.hpp | ObjectPool, ServerStats |
+| server.hpp | Server class, TcpTuning |
+| tls.hpp | Optional TLS (mbedTLS) |
 
 ## Testing
 
-Run unit tests:
 ```bash
-cd build
-ctest --verbose
+cd build && ctest --output-on-failure
 ```
 
-Test coverage includes:
-- Base64 encoding/decoding
-- SHA-1 hashing (for WebSocket key generation)
-- WebSocket frame parsing and encoding
-- Protocol state transitions
-- Connection lifecycle
-
-## Performance Characteristics
-
-- **Zero dynamic allocations** in the hot path (data receive/send)
-- **Fixed buffer sizes** (4KB RX, 8KB TX per connection)
-- **O(1) buffer operations** (circular buffer)
-- **Single-threaded** (no context switches, no lock contention)
-- **Poll-based** (suitable for up to ~1000 connections; epoll available for larger)
-
-### Resource Usage (per connection)
-
-- Memory: ~12 KB fixed (4KB RX + 8KB TX buffers)
-- CPU: O(1) per message on modern systems
-
-## Embedded Platform Support
-
-Designed for:
-- ARM-Linux (32/64-bit)
-- RT-Thread RTOS (future migration target)
-- Any POSIX-compliant system
-
-**Not supported**:
-- Windows (Windows Sockets differ from POSIX)
-- WebAssembly
-- Real-time MCUs without networking stack
+7 test cases covering Base64, SHA-1, WebSocket frame parsing/encoding.
 
 ## Examples
 
-See `examples/`:
-- `echo_server.cpp` - Simple echo server
-- `broadcast_server.cpp` - Broadcast all messages to connected clients
+- `echo_server.cpp` - Echo server
+- `broadcast_server.cpp` - Broadcast to all clients
+- `perf_server.cpp` - Performance benchmark server
 
-## Documentation
+## Platform Support
 
-- `docs/design_zh.md` - Detailed design document (Chinese)
-- `docs/api.md` - API reference
-- `docs/faq.md` - Frequently asked questions
+- ARM-Linux (32/64-bit) - primary target
+- x86-64 Linux
+- Any POSIX-compliant system
 
-## Known Limitations
-
-1. **No TLS/SSL support** (use nginx/HAProxy as reverse proxy if needed)
-2. **No compression** (deflate extension not implemented)
-3. **Single-threaded only** (cannot use multi-worker pattern directly)
-4. **No persistent storage** (sessions are in-memory)
+Not supported: Windows, macOS (not tested in CI)
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Contributing
-
-Contributions welcome! Please:
-1. Follow the Google C++ Style Guide
-2. Ensure all tests pass
-3. Add tests for new features
-4. Update documentation
+MIT License - See [LICENSE](LICENSE) file.
 
 ## References
 
 - [WebSocket RFC 6455](https://tools.ietf.org/html/rfc6455)
-- [sockpp Documentation](https://github.com/fpagliughi/sockpp)
-- [POSIX Poll](https://man7.org/linux/man-pages/man2/poll.2.html)
-
----
-
-**Status**: Active development (v0.1.0-alpha)
-
-Last updated: 2026-02-18
+- [sockpp](https://github.com/fpagliughi/sockpp)
