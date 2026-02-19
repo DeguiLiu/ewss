@@ -73,7 +73,7 @@ void Server::run() {
       if (conn->has_data_to_send()) {
         events |= POLLOUT;
       }
-      fds.push_back({(int)conn->get_fd(), events, 0});
+      fds.push_back({static_cast<int>(conn->get_fd()), events, 0});
     }
 
     // Poll with latency tracking
