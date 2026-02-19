@@ -1,14 +1,14 @@
 # EWSS - 嵌入式 WebSocket 服务器
 
 [![CI](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml/badge.svg)](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-7%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
+[![Tests](https://img.shields.io/badge/Tests-119%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-轻量级、无 ASIO 依赖的 WebSocket 服务器，专为嵌入式 Linux (ARM) 设计。C++17，poll 驱动 Reactor，固定内存 RingBuffer，零拷贝 I/O。
+轻量级 WebSocket 服务器，专为嵌入式 Linux (ARM) 设计。C++17，poll 驱动 Reactor，固定内存 RingBuffer，零拷贝 I/O。
 
 ## 特性
 
-- 无 ASIO 依赖: 基于 poll() 的单线程 Reactor，不依赖 Boost/Libuv
+- 最小依赖: 基于 poll() 的单线程 Reactor，不依赖 Boost/Libuv
 - 固定内存: RingBuffer TX/RX (4KB/8KB 每连接)，热路径零堆分配
 - 零拷贝: writev 分散/聚集 I/O，string_view 握手解析
 - 状态机: HSM 驱动 WebSocket 生命周期 (Handshaking/Open/Closing/Closed)
@@ -135,7 +135,7 @@ x86-64 单线程回显服务器基准测试:
 cd build && ctest --output-on-failure
 ```
 
-7 个测试用例覆盖 Base64、SHA-1、WebSocket 帧解析/编码。
+119 个测试用例 (6 个套件) 覆盖 Base64、SHA-1、WebSocket 帧解析/编码。
 
 ## 示例
 

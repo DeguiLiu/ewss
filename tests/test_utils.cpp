@@ -86,7 +86,7 @@ TEST_CASE("WebSocket frame unmask", "[utils]") {
   // TODO: unmask_payload not yet implemented in utils.hpp
   // Masked payload: "Hello" with key 0x37fa213d
   uint8_t masked[] = {0x7f, 0x9f, 0x4d, 0x51, 0x58};
-  uint8_t mask_key[] = {0x37, 0xfa, 0x21, 0x3d};
+  // mask_key used in Connection::unmask_payload (tested in test_frame.cpp)
 
   // ws::unmask_payload(masked, sizeof(masked), mask_key);
 

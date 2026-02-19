@@ -48,3 +48,7 @@ streaming-arch-demo/
 # sockpp build artifacts
 libsockpp*
 sockpp/
+
+# Test binaries
+test_*
+!tests/test_*.cpp

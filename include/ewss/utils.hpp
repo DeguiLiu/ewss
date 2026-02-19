@@ -250,17 +250,19 @@ inline size_t parse_frame_header(std::string_view data, FrameHeader& header) {
 
   if (len == 126) {
     if (data.size() < 4) return 0;
-    len = (static_cast<uint16_t>(data[2]) << 8) | data[3];
+    len = (static_cast<uint64_t>(static_cast<uint8_t>(data[2])) << 8) |
+          static_cast<uint64_t>(static_cast<uint8_t>(data[3]));
     header_size = 4;
   } else if (len == 127) {
     if (data.size() < 10) return 0;
-    len = (static_cast<uint64_t>(data[2]) << 56) |
-          (static_cast<uint64_t>(data[3]) << 48) |
-          (static_cast<uint64_t>(data[4]) << 40) |
-          (static_cast<uint64_t>(data[5]) << 32) |
-          (static_cast<uint64_t>(data[6]) << 24) |
-          (static_cast<uint64_t>(data[7]) << 16) |
-          (static_cast<uint64_t>(data[8]) << 8) | data[9];
+    len = (static_cast<uint64_t>(static_cast<uint8_t>(data[2])) << 56) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[3])) << 48) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[4])) << 40) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[5])) << 32) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[6])) << 24) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[7])) << 16) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(data[8])) << 8) |
+          static_cast<uint64_t>(static_cast<uint8_t>(data[9]));
     header_size = 10;
   }
 

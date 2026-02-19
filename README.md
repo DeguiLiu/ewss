@@ -1,16 +1,16 @@
 # EWSS - Embedded WebSocket Server
 
 [![CI](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml/badge.svg)](https://github.com/DeguiLiu/ewss/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-7%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
+[![Tests](https://img.shields.io/badge/Tests-119%20passed-brightgreen)](https://github.com/DeguiLiu/ewss/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [中文文档](README_zh.md)
 
-Lightweight, ASIO-free WebSocket server for embedded Linux (ARM). C++17, poll-based Reactor, fixed-memory RingBuffers, zero-copy I/O.
+Lightweight WebSocket server for embedded Linux (ARM). C++17, poll-based Reactor, fixed-memory RingBuffers, zero-copy I/O.
 
 ## Features
 
-- ASIO-free: poll()-based single-threaded Reactor, no Boost/Libuv dependency
+- Minimal dependencies: poll()-based single-threaded Reactor, no Boost/Libuv dependency
 - Fixed memory: RingBuffer TX/RX (4KB/8KB per connection), no heap allocation in hot path
 - Zero-copy: writev scatter/gather I/O, string_view-based handshake parsing
 - State machine: HSM-driven WebSocket lifecycle (Handshaking/Open/Closing/Closed)
@@ -137,7 +137,7 @@ Benchmark on x86-64 (single-threaded echo server):
 cd build && ctest --output-on-failure
 ```
 
-7 test cases covering Base64, SHA-1, WebSocket frame parsing/encoding.
+119 test cases (6 suites) covering Base64, SHA-1, WebSocket frame parsing/encoding.
 
 ## Examples
 
