@@ -1,19 +1,18 @@
-#include <catch2/catch_test_macros.hpp>
-
 #include "ewss/server.hpp"
 #include "ewss/utils.hpp"
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <chrono>
 #include <cstring>
+
+#include <arpa/inet.h>
+#include <atomic>
+#include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <netinet/in.h>
 #include <string>
 #include <string_view>
+#include <sys/socket.h>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
 // ============================================================================
@@ -27,15 +26,15 @@ class WsTestClient {
 
   bool connect(uint16_t port) {
     fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd_ < 0) return false;
+    if (fd_ < 0)
+      return false;
 
     struct sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr),
-                  sizeof(addr)) < 0) {
+    if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
       ::close(fd_);
       fd_ = -1;
       return false;
@@ -63,34 +62,31 @@ class WsTestClient {
     request += client_key;
     request += "\r\n\r\n";
 
-    if (!send_raw(request.data(), request.size())) return false;
+    if (!send_raw(request.data(), request.size()))
+      return false;
 
     // Read HTTP 101 response
     char buf[1024];
     size_t total = 0;
     while (total < sizeof(buf) - 1) {
       ssize_t n = ::recv(fd_, buf + total, sizeof(buf) - 1 - total, 0);
-      if (n <= 0) return false;
+      if (n <= 0)
+        return false;
       total += static_cast<size_t>(n);
       buf[total] = '\0';
-      if (strstr(buf, "\r\n\r\n") != nullptr) break;
+      if (strstr(buf, "\r\n\r\n") != nullptr)
+        break;
     }
 
     // Verify 101 status
     return strstr(buf, "101") != nullptr;
   }
 
-  bool send_text(std::string_view payload) {
-    return send_frame(0x01, payload.data(), payload.size());
-  }
+  bool send_text(std::string_view payload) { return send_frame(0x01, payload.data(), payload.size()); }
 
-  bool send_binary(const void* data, size_t len) {
-    return send_frame(0x02, data, len);
-  }
+  bool send_binary(const void* data, size_t len) { return send_frame(0x02, data, len); }
 
-  bool send_ping(std::string_view payload = "") {
-    return send_frame(0x09, payload.data(), payload.size());
-  }
+  bool send_ping(std::string_view payload = "") { return send_frame(0x09, payload.data(), payload.size()); }
 
   bool send_close(uint16_t code = 1000) {
     uint8_t close_payload[2];
@@ -109,19 +105,23 @@ class WsTestClient {
     setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     uint8_t header[2];
-    if (!recv_exact(header, 2)) return {};
+    if (!recv_exact(header, 2))
+      return {};
 
     uint8_t opcode = header[0] & 0x0F;
-    if (out_opcode) *out_opcode = opcode;
+    if (out_opcode)
+      *out_opcode = opcode;
 
     uint64_t payload_len = header[1] & 0x7F;
     if (payload_len == 126) {
       uint8_t ext[2];
-      if (!recv_exact(ext, 2)) return {};
+      if (!recv_exact(ext, 2))
+        return {};
       payload_len = (static_cast<uint64_t>(ext[0]) << 8) | ext[1];
     } else if (payload_len == 127) {
       uint8_t ext[8];
-      if (!recv_exact(ext, 8)) return {};
+      if (!recv_exact(ext, 8))
+        return {};
       payload_len = 0;
       for (int i = 0; i < 8; ++i) {
         payload_len = (payload_len << 8) | ext[i];
@@ -130,8 +130,7 @@ class WsTestClient {
 
     std::string payload(payload_len, '\0');
     if (payload_len > 0) {
-      if (!recv_exact(reinterpret_cast<uint8_t*>(payload.data()),
-                      payload_len)) {
+      if (!recv_exact(reinterpret_cast<uint8_t*>(payload.data()), payload_len)) {
         return {};
       }
     }
@@ -155,7 +154,8 @@ class WsTestClient {
     size_t sent = 0;
     while (sent < len) {
       ssize_t n = ::send(fd_, p + sent, len - sent, MSG_NOSIGNAL);
-      if (n <= 0) return false;
+      if (n <= 0)
+        return false;
       sent += static_cast<size_t>(n);
     }
     return true;
@@ -165,7 +165,8 @@ class WsTestClient {
     size_t got = 0;
     while (got < len) {
       ssize_t n = ::recv(fd_, buf + got, len - got, 0);
-      if (n <= 0) return false;
+      if (n <= 0)
+        return false;
       got += static_cast<size_t>(n);
     }
     return true;
@@ -198,7 +199,8 @@ class WsTestClient {
     memcpy(frame + pos, mask_key, 4);
     pos += 4;
 
-    if (!send_raw(frame, pos)) return false;
+    if (!send_raw(frame, pos))
+      return false;
 
     // Send masked payload
     if (len > 0) {
@@ -207,7 +209,8 @@ class WsTestClient {
       for (size_t i = 0; i < len; ++i) {
         masked[i] = src[i] ^ mask_key[i % 4];
       }
-      if (!send_raw(masked.data(), masked.size())) return false;
+      if (!send_raw(masked.data(), masked.size()))
+        return false;
     }
     return true;
   }
@@ -300,9 +303,7 @@ TEST_CASE("Integration - WebSocket handshake", "[integration]") {
 
 TEST_CASE("Integration - Single echo", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   WsTestClient client;
@@ -362,9 +363,7 @@ TEST_CASE("Integration - Multiple sequential connections", "[integration]") {
 
 TEST_CASE("Integration - Batch messages single connection", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   WsTestClient client;
@@ -394,9 +393,7 @@ TEST_CASE("Integration - Batch messages single connection", "[integration]") {
 
 TEST_CASE("Integration - Binary message echo", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send_binary(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send_binary(msg); };
   fixture.start();
 
   WsTestClient client;
@@ -419,9 +416,7 @@ TEST_CASE("Integration - Binary message echo", "[integration]") {
 
 TEST_CASE("Integration - Ping Pong", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   WsTestClient client;
@@ -444,12 +439,8 @@ TEST_CASE("Integration - Client-initiated close", "[integration]") {
   std::atomic<bool> close_called{false};
 
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
-  fixture.server.on_close = [&](const auto&, bool) {
-    close_called = true;
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
+  fixture.server.on_close = [&](const auto&, bool) { close_called = true; };
   fixture.start();
 
   WsTestClient client;
@@ -468,9 +459,7 @@ TEST_CASE("Integration - Client-initiated close", "[integration]") {
 
 TEST_CASE("Integration - Server stats tracking", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   REQUIRE(fixture.server.stats().total_connections.load() == 0);
@@ -494,9 +483,7 @@ TEST_CASE("Integration - Server stats tracking", "[integration]") {
 
 TEST_CASE("Integration - Large message", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   WsTestClient client;
@@ -562,9 +549,7 @@ TEST_CASE("Integration - Connection callbacks", "[integration]") {
 
 TEST_CASE("Integration - Empty message", "[integration]") {
   ServerFixture fixture;
-  fixture.server.on_message = [](const auto& conn, std::string_view msg) {
-    conn->send(msg);
-  };
+  fixture.server.on_message = [](const auto& conn, std::string_view msg) { conn->send(msg); };
   fixture.start();
 
   WsTestClient client;

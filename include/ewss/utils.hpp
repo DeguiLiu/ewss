@@ -1,8 +1,9 @@
 #ifndef EWSS_UTILS_HPP_
 #define EWSS_UTILS_HPP_
 
-#include <array>
 #include <cstdint>
+
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,15 +17,16 @@ namespace ewss {
 class Base64 {
  public:
   static std::string encode(const uint8_t* data, size_t size) {
-    static constexpr const char kAlphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static constexpr const char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::string result;
     result.reserve((size + 2) / 3 * 4);
 
     for (size_t i = 0; i < size; i += 3) {
       uint32_t b = (static_cast<uint32_t>(data[i]) << 16);
-      if (i + 1 < size) b |= (static_cast<uint32_t>(data[i + 1]) << 8);
-      if (i + 2 < size) b |= static_cast<uint32_t>(data[i + 2]);
+      if (i + 1 < size)
+        b |= (static_cast<uint32_t>(data[i + 1]) << 8);
+      if (i + 2 < size)
+        b |= static_cast<uint32_t>(data[i + 2]);
 
       result.push_back(kAlphabet[(b >> 18) & 0x3F]);
       result.push_back(kAlphabet[(b >> 12) & 0x3F]);
@@ -36,36 +38,28 @@ class Base64 {
 
   static std::vector<uint8_t> decode(std::string_view encoded) {
     static constexpr uint8_t kTable[256] = {
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63, 52, 53, 54,
-        55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64, 64, 0,  1,  2,
-        3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64, 64, 26, 27, 28, 29, 30,
-        31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
-        48, 49, 50, 51, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
-        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63, 52, 53, 54, 55, 56, 57, 58, 59,
+        60, 61, 64, 64, 64, 64, 64, 64, 64, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18,
+        19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64, 64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+        41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+        64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
     };
 
     std::vector<uint8_t> result;
-    if (encoded.size() % 4 != 0) return result;
+    if (encoded.size() % 4 != 0)
+      return result;
     result.reserve(encoded.size() / 4 * 3);
 
     for (size_t i = 0; i < encoded.size(); i += 4) {
-      uint32_t b = (static_cast<uint32_t>(kTable[static_cast<uint8_t>(
-                        encoded[i])]) << 18) |
-                   (static_cast<uint32_t>(kTable[static_cast<uint8_t>(
-                        encoded[i + 1])]) << 12);
+      uint32_t b = (static_cast<uint32_t>(kTable[static_cast<uint8_t>(encoded[i])]) << 18) |
+                   (static_cast<uint32_t>(kTable[static_cast<uint8_t>(encoded[i + 1])]) << 12);
       if (encoded[i + 2] != '=') {
-        b |= (static_cast<uint32_t>(kTable[static_cast<uint8_t>(
-                  encoded[i + 2])]) << 6);
+        b |= (static_cast<uint32_t>(kTable[static_cast<uint8_t>(encoded[i + 2])]) << 6);
         if (encoded[i + 3] != '=') {
-          b |= static_cast<uint32_t>(
-              kTable[static_cast<uint8_t>(encoded[i + 3])]);
+          b |= static_cast<uint32_t>(kTable[static_cast<uint8_t>(encoded[i + 3])]);
           result.push_back((b >> 16) & 0xFF);
           result.push_back((b >> 8) & 0xFF);
           result.push_back(b & 0xFF);
@@ -94,8 +88,7 @@ class SHA1 {
   }
 
   static std::string hex_digest(std::string_view input) {
-    auto hash = compute(reinterpret_cast<const uint8_t*>(input.data()),
-                        input.size());
+    auto hash = compute(reinterpret_cast<const uint8_t*>(input.data()), input.size());
     std::string result;
     result.reserve(40);
     for (auto byte : hash) {
@@ -153,23 +146,18 @@ class SHA1 {
   }
 
  private:
-  std::array<uint32_t, 5> h_ = {0x67452301, 0xEFCDAB89, 0x98BADCFE,
-                                 0x10325476, 0xC3D2E1F0};
+  std::array<uint32_t, 5> h_ = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
   std::array<uint8_t, 64> buffer_{};
   uint32_t buf_pos_ = 0;
   uint64_t total_bytes_ = 0;
 
-  static uint32_t rol(uint32_t x, int n) {
-    return (x << n) | (x >> (32 - n));
-  }
+  static uint32_t rol(uint32_t x, int n) { return (x << n) | (x >> (32 - n)); }
 
   void process_block(const uint8_t* block) {
     std::array<uint32_t, 80> w;
     for (int i = 0; i < 16; ++i) {
-      w[i] = (static_cast<uint32_t>(block[i * 4]) << 24) |
-             (static_cast<uint32_t>(block[i * 4 + 1]) << 16) |
-             (static_cast<uint32_t>(block[i * 4 + 2]) << 8) |
-             static_cast<uint32_t>(block[i * 4 + 3]);
+      w[i] = (static_cast<uint32_t>(block[i * 4]) << 24) | (static_cast<uint32_t>(block[i * 4 + 1]) << 16) |
+             (static_cast<uint32_t>(block[i * 4 + 2]) << 8) | static_cast<uint32_t>(block[i * 4 + 3]);
     }
     for (int i = 16; i < 80; ++i) {
       w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
@@ -217,14 +205,7 @@ class SHA1 {
 namespace ws {
 
 // Frame types
-enum class OpCode : uint8_t {
-  kContinuation = 0x0,
-  kText = 0x1,
-  kBinary = 0x2,
-  kClose = 0x8,
-  kPing = 0x9,
-  kPong = 0xA
-};
+enum class OpCode : uint8_t { kContinuation = 0x0, kText = 0x1, kBinary = 0x2, kClose = 0x8, kPing = 0x9, kPong = 0xA };
 
 struct FrameHeader {
   bool fin;
@@ -236,7 +217,8 @@ struct FrameHeader {
 // Parse WebSocket frame header from buffer
 // Returns bytes consumed, or 0 if incomplete
 inline size_t parse_frame_header(std::string_view data, FrameHeader& header) {
-  if (data.size() < 2) return 0;
+  if (data.size() < 2)
+    return 0;
 
   uint8_t byte0 = data[0];
   uint8_t byte1 = data[1];
@@ -249,12 +231,14 @@ inline size_t parse_frame_header(std::string_view data, FrameHeader& header) {
   size_t header_size = 2;
 
   if (len == 126) {
-    if (data.size() < 4) return 0;
+    if (data.size() < 4)
+      return 0;
     len = (static_cast<uint64_t>(static_cast<uint8_t>(data[2])) << 8) |
           static_cast<uint64_t>(static_cast<uint8_t>(data[3]));
     header_size = 4;
   } else if (len == 127) {
-    if (data.size() < 10) return 0;
+    if (data.size() < 10)
+      return 0;
     len = (static_cast<uint64_t>(static_cast<uint8_t>(data[2])) << 56) |
           (static_cast<uint64_t>(static_cast<uint8_t>(data[3])) << 48) |
           (static_cast<uint64_t>(static_cast<uint8_t>(data[4])) << 40) |
@@ -269,7 +253,8 @@ inline size_t parse_frame_header(std::string_view data, FrameHeader& header) {
   header.payload_len = len;
 
   if (header.masked) {
-    if (data.size() < header_size + 4) return 0;
+    if (data.size() < header_size + 4)
+      return 0;
     header_size += 4;
   }
 
@@ -277,9 +262,7 @@ inline size_t parse_frame_header(std::string_view data, FrameHeader& header) {
 }
 
 // Encode WebSocket frame
-inline std::vector<uint8_t> encode_frame(OpCode opcode,
-                                          std::string_view payload,
-                                          bool mask = false) {
+inline std::vector<uint8_t> encode_frame(OpCode opcode, std::string_view payload, bool mask = false) {
   std::vector<uint8_t> frame;
   frame.push_back(0x80 | static_cast<uint8_t>(opcode));
 
@@ -308,14 +291,12 @@ inline std::vector<uint8_t> encode_frame(OpCode opcode,
 
 // Encode WebSocket frame header into fixed buffer (zero allocation)
 // Returns number of bytes written to header_buf (max 14 bytes)
-inline size_t encode_frame_header(uint8_t* header_buf, OpCode opcode,
-                                   size_t payload_len, bool mask = false) {
+inline size_t encode_frame_header(uint8_t* header_buf, OpCode opcode, size_t payload_len, bool mask = false) {
   size_t pos = 0;
   header_buf[pos++] = 0x80 | static_cast<uint8_t>(opcode);
 
   if (payload_len < 126) {
-    header_buf[pos++] = static_cast<uint8_t>(
-        (mask ? 0x80 : 0x00) | payload_len);
+    header_buf[pos++] = static_cast<uint8_t>((mask ? 0x80 : 0x00) | payload_len);
   } else if (payload_len < 65536) {
     header_buf[pos++] = static_cast<uint8_t>((mask ? 0x80 : 0x00) | 126);
     header_buf[pos++] = static_cast<uint8_t>((payload_len >> 8) & 0xFF);

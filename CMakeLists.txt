@@ -9,11 +9,7 @@ option(EWSS_BUILD_TESTS "Build tests" ON)
 option(EWSS_BUILD_EXAMPLES "Build examples" ON)
 option(EWSS_NO_EXCEPTIONS "Build without exceptions" OFF)
 
-# Compiler flags
-if(EWSS_NO_EXCEPTIONS)
-  add_compile_options(-fno-exceptions -fno-rtti)
-endif()
-
+# Compiler flags (applied per-target, not globally, to avoid breaking third-party deps)
 if(MSVC)
   add_compile_options(/W4)
 else()
@@ -24,11 +20,11 @@ endif()
 # FetchContent for dependencies
 include(FetchContent)
 
-# sockpp: TCP socket wrapper
+# sockpp: TCP socket wrapper (with SOCKPP_THROW for -fno-exceptions support)
 FetchContent_Declare(
   sockpp
-  GIT_REPOSITORY https://ghfast.top/https://github.com/fpagliughi/sockpp.git
-  GIT_TAG v0.7.1
+  GIT_REPOSITORY https://ghfast.top/https://github.com/DeguiLiu/sockpp.git
+  GIT_TAG 8ae1354
 )
 
 FetchContent_MakeAvailable(sockpp)
@@ -41,8 +37,13 @@ target_include_directories(ewss PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(ewss PUBLIC sockpp)
+target_link_libraries(ewss PUBLIC Sockpp::sockpp)
 target_compile_features(ewss PUBLIC cxx_std_17)
+
+# Apply -fno-exceptions/-fno-rtti only to ewss target (not to third-party deps like sockpp)
+if(EWSS_NO_EXCEPTIONS)
+  target_compile_options(ewss PUBLIC -fno-exceptions -fno-rtti)
+endif()
 
 # Tests
 if(EWSS_BUILD_TESTS)

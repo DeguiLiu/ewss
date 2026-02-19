@@ -16,6 +16,7 @@
 //
 
 #include <cstdint>
+
 #include <string>
 
 #ifdef EWSS_WITH_TLS
@@ -35,14 +36,14 @@ namespace ewss {
 // ============================================================================
 
 struct TlsConfig {
-  std::string cert_path;          // Server certificate (PEM)
-  std::string key_path;           // Server private key (PEM)
-  std::string ca_path;            // CA certificate for client auth (optional)
+  std::string cert_path;  // Server certificate (PEM)
+  std::string key_path;   // Server private key (PEM)
+  std::string ca_path;    // CA certificate for client auth (optional)
   bool require_client_cert = false;
 
   // Minimal cipher suite for embedded (TLS 1.2+)
   // Default: TLS_AES_128_GCM_SHA256
-  int min_tls_version = 0;       // 0 = TLS 1.2 minimum
+  int min_tls_version = 0;  // 0 = TLS 1.2 minimum
 };
 
 #ifdef EWSS_WITH_TLS
@@ -79,39 +80,39 @@ class TlsContext {
     const char* pers = "ewss_tls";
 
     // Seed RNG
-    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg_, mbedtls_entropy_func,
-                                     &entropy_,
-                                     reinterpret_cast<const unsigned char*>(pers),
-                                     strlen(pers));
-    if (ret != 0) return ret;
+    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg_, mbedtls_entropy_func, &entropy_,
+                                    reinterpret_cast<const unsigned char*>(pers), strlen(pers));
+    if (ret != 0)
+      return ret;
 
     // Load certificate
     ret = mbedtls_x509_crt_parse_file(&srvcert_, config.cert_path.c_str());
-    if (ret != 0) return ret;
+    if (ret != 0)
+      return ret;
 
     // Load CA if provided
     if (!config.ca_path.empty()) {
       ret = mbedtls_x509_crt_parse_file(&srvcert_, config.ca_path.c_str());
-      if (ret != 0) return ret;
+      if (ret != 0)
+        return ret;
     }
 
     // Load private key
-    ret = mbedtls_pk_parse_keyfile(&pkey_, config.key_path.c_str(),
-                                    nullptr, mbedtls_ctr_drbg_random,
-                                    &ctr_drbg_);
-    if (ret != 0) return ret;
+    ret = mbedtls_pk_parse_keyfile(&pkey_, config.key_path.c_str(), nullptr, mbedtls_ctr_drbg_random, &ctr_drbg_);
+    if (ret != 0)
+      return ret;
 
     // Setup SSL config
-    ret = mbedtls_ssl_config_defaults(&conf_,
-                                       MBEDTLS_SSL_IS_SERVER,
-                                       MBEDTLS_SSL_TRANSPORT_STREAM,
-                                       MBEDTLS_SSL_PRESET_DEFAULT);
-    if (ret != 0) return ret;
+    ret = mbedtls_ssl_config_defaults(&conf_, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM,
+                                      MBEDTLS_SSL_PRESET_DEFAULT);
+    if (ret != 0)
+      return ret;
 
     mbedtls_ssl_conf_rng(&conf_, mbedtls_ctr_drbg_random, &ctr_drbg_);
     mbedtls_ssl_conf_ca_chain(&conf_, srvcert_.next, nullptr);
     ret = mbedtls_ssl_conf_own_cert(&conf_, &srvcert_, &pkey_);
-    if (ret != 0) return ret;
+    if (ret != 0)
+      return ret;
 
     // Client authentication
     if (config.require_client_cert) {
@@ -163,33 +164,25 @@ class TlsSession {
   // Setup session with context and socket fd
   int setup(const TlsContext& ctx, int fd) {
     int ret = mbedtls_ssl_setup(&ssl_, ctx.config());
-    if (ret != 0) return ret;
+    if (ret != 0)
+      return ret;
 
     net_.fd = fd;
-    mbedtls_ssl_set_bio(&ssl_, &net_,
-                         mbedtls_net_send, mbedtls_net_recv, nullptr);
+    mbedtls_ssl_set_bio(&ssl_, &net_, mbedtls_net_send, mbedtls_net_recv, nullptr);
     return 0;
   }
 
   // Perform TLS handshake
-  int handshake() {
-    return mbedtls_ssl_handshake(&ssl_);
-  }
+  int handshake() { return mbedtls_ssl_handshake(&ssl_); }
 
   // Read decrypted data
-  int read(uint8_t* buf, size_t len) {
-    return mbedtls_ssl_read(&ssl_, buf, len);
-  }
+  int read(uint8_t* buf, size_t len) { return mbedtls_ssl_read(&ssl_, buf, len); }
 
   // Write data (encrypted)
-  int write(const uint8_t* buf, size_t len) {
-    return mbedtls_ssl_write(&ssl_, buf, len);
-  }
+  int write(const uint8_t* buf, size_t len) { return mbedtls_ssl_write(&ssl_, buf, len); }
 
   // Close TLS session
-  int close_notify() {
-    return mbedtls_ssl_close_notify(&ssl_);
-  }
+  int close_notify() { return mbedtls_ssl_close_notify(&ssl_); }
 
  private:
   mbedtls_ssl_context ssl_;

@@ -1,5 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
 #include "ewss/connection_pool.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace ewss;
 
@@ -34,7 +35,7 @@ TEST_CASE("ObjectPool - exhaust pool", "[pool]") {
   (void)pool.acquire();  // b
   int32_t c = pool.acquire();
   REQUIRE(a >= 0);
-  
+
   REQUIRE(c >= 0);
   REQUIRE(pool.available() == 0);
 
@@ -46,7 +47,8 @@ TEST_CASE("ObjectPool - exhaust pool", "[pool]") {
 TEST_CASE("ObjectPool - release and reacquire", "[pool]") {
   ObjectPool<int, 2> pool;
   int32_t a = pool.acquire();
-  int32_t b = pool.acquire(); (void)b;
+  int32_t b = pool.acquire();
+  (void)b;
   REQUIRE(pool.acquire() == -1);
 
   pool.release(a);

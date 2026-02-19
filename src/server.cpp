@@ -2,14 +2,28 @@
 
 #include <cerrno>
 #include <cstring>
-#include <iostream>
-#include <vector>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
+
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <iostream>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#include <vector>
+
+// Exception support for -fno-exceptions builds
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
+#define EWSS_THROW(ex) throw(ex)
+#else
+#include <cstdio>
+#include <cstdlib>
+#define EWSS_THROW(ex)            \
+  do {                            \
+    std::fputs(#ex "\n", stderr); \
+    std::abort();                 \
+  } while (0)
+#endif
 
 namespace ewss {
 
@@ -17,7 +31,7 @@ Server::Server(uint16_t port, const std::string& bind_addr) : port_(port), bind_
   // Create socket
   server_sock_ = socket(AF_INET, SOCK_STREAM, 0);
   if (server_sock_ < 0) {
-    throw std::runtime_error("Failed to create socket");
+    EWSS_THROW(std::runtime_error("Failed to create socket"));
   }
 
   // Set SO_REUSEADDR
@@ -34,13 +48,13 @@ Server::Server(uint16_t port, const std::string& bind_addr) : port_(port), bind_
   if (bind(server_sock_, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
     int err = errno;
     close(server_sock_);
-    throw std::runtime_error("Failed to bind port " + std::to_string(port_) + ": " + strerror(err));
+    EWSS_THROW(std::runtime_error("Failed to bind port " + std::to_string(port_) + ": " + strerror(err)));
   }
 
   // Listen
   if (listen(server_sock_, 128) < 0) {
     close(server_sock_);
-    throw std::runtime_error("Failed to listen");
+    EWSS_THROW(std::runtime_error("Failed to listen"));
   }
 
   // Set non-blocking
@@ -81,8 +95,8 @@ void Server::run() {
     int ret = ::poll(poll_fds_.data(), static_cast<nfds_t>(nfds), poll_timeout_ms_);
     auto poll_end = std::chrono::steady_clock::now();
 
-    uint64_t poll_us = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(poll_end - poll_start).count());
+    uint64_t poll_us =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(poll_end - poll_start).count());
     stats_.last_poll_latency_us.store(poll_us, std::memory_order_relaxed);
     uint64_t prev_max = stats_.max_poll_latency_us.load(std::memory_order_relaxed);
     if (poll_us > prev_max) {
@@ -105,8 +119,7 @@ void Server::run() {
         // Accept and immediately close to drain the queue
         struct sockaddr_in client_addr;
         socklen_t client_addr_len = sizeof(client_addr);
-        int reject_sock = accept(server_sock_,
-            reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
+        int reject_sock = accept(server_sock_, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
         if (reject_sock >= 0) {
           ::close(reject_sock);
         }
@@ -146,8 +159,7 @@ expected<void, ErrorCode> Server::accept_connection() {
 
   struct sockaddr_in client_addr;
   socklen_t client_addr_len = sizeof(client_addr);
-  int client_sock = accept(server_sock_,
-      reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
+  int client_sock = accept(server_sock_, reinterpret_cast<struct sockaddr*>(&client_addr), &client_addr_len);
 
   if (client_sock < 0) {
     int err = errno;
@@ -193,9 +205,7 @@ void Server::handle_connection_io(ConnPtr& conn, const pollfd& pfd) {
 
   if (pfd.revents & POLLOUT) {
     // Use writev for zero-copy send when enabled
-    auto write_result = use_writev_
-        ? conn->handle_write_vectored()
-        : conn->handle_write();
+    auto write_result = use_writev_ ? conn->handle_write_vectored() : conn->handle_write();
     if (!write_result.has_value()) {
       conn->close();
     }
@@ -252,16 +262,14 @@ void Server::apply_tcp_tuning(int fd) {
     setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt));
 
 #ifdef TCP_KEEPIDLE
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,
-               &tcp_tuning_.keepalive_idle_s, sizeof(tcp_tuning_.keepalive_idle_s));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &tcp_tuning_.keepalive_idle_s, sizeof(tcp_tuning_.keepalive_idle_s));
 #endif
 #ifdef TCP_KEEPINTVL
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL,
-               &tcp_tuning_.keepalive_interval_s, sizeof(tcp_tuning_.keepalive_interval_s));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &tcp_tuning_.keepalive_interval_s,
+               sizeof(tcp_tuning_.keepalive_interval_s));
 #endif
 #ifdef TCP_KEEPCNT
-    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,
-               &tcp_tuning_.keepalive_count, sizeof(tcp_tuning_.keepalive_count));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &tcp_tuning_.keepalive_count, sizeof(tcp_tuning_.keepalive_count));
 #endif
   }
 }

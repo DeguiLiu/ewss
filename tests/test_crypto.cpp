@@ -1,5 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
 #include "ewss/utils.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace ewss;
 
@@ -55,8 +56,7 @@ TEST_CASE("Base64 encode long string", "[crypto]") {
       "b3duIGNhbWUgdGhlIHJhaW4NCmFuZCB3YXNoZWQgdGhlIHNwaWRlciBvdXQuDQpPdXQg"
       "Y2FtZSB0aGUgc3VuDQphbmQgZHJpZWQgdXAgYWxsIHRoZSByYWluDQphbmQgdGhlIGl0"
       "c3kgYml0c3kgc3BpZGVyIGNsaW1iZWQgdXAgdGhlIHNwb3V0IGFnYWluLg==";
-  auto encoded = Base64::encode(
-      reinterpret_cast<const uint8_t*>(input.data()), input.size());
+  auto encoded = Base64::encode(reinterpret_cast<const uint8_t*>(input.data()), input.size());
   REQUIRE(encoded == expected);
 }
 
@@ -79,8 +79,7 @@ TEST_CASE("Base64 decode all test vectors", "[crypto]") {
   // Roundtrip all vectors
   std::vector<std::string> inputs = {"", "f", "fo", "foo", "foob", "fooba", "foobar"};
   for (const auto& input : inputs) {
-    auto encoded = Base64::encode(
-        reinterpret_cast<const uint8_t*>(input.data()), input.size());
+    auto encoded = Base64::encode(reinterpret_cast<const uint8_t*>(input.data()), input.size());
     auto decoded = Base64::decode(encoded);
     std::string result(decoded.begin(), decoded.end());
     REQUIRE(result == input);
@@ -107,15 +106,13 @@ TEST_CASE("SHA1 quick brown fox", "[crypto]") {
 }
 
 TEST_CASE("SHA1 single iteration", "[crypto]") {
-  REQUIRE(SHA1::hex_digest("Test") ==
-          "640ab2bae07bedc4c163f679a746f7ab7fb5d1fa");
+  REQUIRE(SHA1::hex_digest("Test") == "640ab2bae07bedc4c163f679a746f7ab7fb5d1fa");
 }
 
 TEST_CASE("SHA1 WebSocket accept key", "[crypto]") {
   // RFC 6455 test vector
   std::string input = "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-  auto hash = SHA1::compute(
-      reinterpret_cast<const uint8_t*>(input.data()), input.size());
+  auto hash = SHA1::compute(reinterpret_cast<const uint8_t*>(input.data()), input.size());
   std::string b64 = Base64::encode(hash.data(), hash.size());
   REQUIRE(b64 == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
 }

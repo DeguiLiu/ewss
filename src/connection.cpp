@@ -78,17 +78,17 @@ expected<void, ErrorCode> Connection::handle_write() {
   uint8_t temp[kTempReadSize];
   size_t len = tx_buffer_.peek(temp, sizeof(temp));
 
-  ssize_t n = socket_.write(temp, len);
-  if (n > 0) {
-    tx_buffer_.advance(n);
+  auto res = socket_.write(temp, len);
+  if (res) {
+    tx_buffer_.advance(res.value());
     check_low_watermark();
     last_error_code_ = ErrorCode::kOk;
     return expected<void, ErrorCode>::success();
-  } else if (n < 0) {
-    int err = errno;
+  } else {
+    int err = res.error().value();
     if (err != EAGAIN && err != EWOULDBLOCK) {
       last_error_code_ = ErrorCode::kSocketError;
-      log_error("Write error: " + std::string(strerror(err)));
+      log_error("Write error: " + res.error().message());
       return expected<void, ErrorCode>::error(ErrorCode::kSocketError);
     }
   }
@@ -257,12 +257,12 @@ expected<void, ErrorCode> Connection::parse_handshake() {
   // Total max ~130 bytes, fits on stack
   char response_buf[256];
   int response_len = snprintf(response_buf, sizeof(response_buf),
-      "HTTP/1.1 101 Switching Protocols\r\n"
-      "Upgrade: websocket\r\n"
-      "Connection: Upgrade\r\n"
-      "Sec-WebSocket-Accept: %s\r\n"
-      "\r\n",
-      accept_key.c_str());
+                              "HTTP/1.1 101 Switching Protocols\r\n"
+                              "Upgrade: websocket\r\n"
+                              "Connection: Upgrade\r\n"
+                              "Sec-WebSocket-Accept: %s\r\n"
+                              "\r\n",
+                              accept_key.c_str());
 
   if (response_len <= 0 || static_cast<size_t>(response_len) >= sizeof(response_buf)) {
     last_error_code_ = ErrorCode::kHandshakeFailed;
@@ -270,8 +270,7 @@ expected<void, ErrorCode> Connection::parse_handshake() {
   }
 
   // Write response to TX buffer
-  if (!tx_buffer_.push(reinterpret_cast<const uint8_t*>(response_buf),
-                       static_cast<size_t>(response_len))) {
+  if (!tx_buffer_.push(reinterpret_cast<const uint8_t*>(response_buf), static_cast<size_t>(response_len))) {
     last_error_code_ = ErrorCode::kBufferFull;
     return expected<void, ErrorCode>::error(ErrorCode::kBufferFull);
   }
@@ -355,16 +354,14 @@ void Connection::parse_frames() {
 void Connection::write_frame(std::string_view payload, ws::OpCode opcode) {
   // Zero-allocation frame write: header on stack, payload direct to TxBuffer
   uint8_t header_buf[14];
-  size_t header_len = ws::encode_frame_header(
-      header_buf, opcode, payload.size(), false);
+  size_t header_len = ws::encode_frame_header(header_buf, opcode, payload.size(), false);
 
   if (!tx_buffer_.push(header_buf, header_len)) {
     log_error("TX buffer overflow (header)");
     return;
   }
   if (!payload.empty()) {
-    if (!tx_buffer_.push(
-            reinterpret_cast<const uint8_t*>(payload.data()), payload.size())) {
+    if (!tx_buffer_.push(reinterpret_cast<const uint8_t*>(payload.data()), payload.size())) {
       log_error("TX buffer overflow (payload)");
     }
   }
@@ -376,8 +373,7 @@ void Connection::write_close_frame(uint16_t code) {
   close_payload[1] = static_cast<uint8_t>(code & 0xFF);
 
   uint8_t header_buf[14];
-  size_t header_len = ws::encode_frame_header(
-      header_buf, ws::OpCode::kClose, 2, false);
+  size_t header_len = ws::encode_frame_header(header_buf, ws::OpCode::kClose, 2, false);
 
   if (!tx_buffer_.push(header_buf, header_len)) {
     log_error("TX buffer overflow (close header)");
@@ -427,13 +423,11 @@ expected<void, ErrorCode> HandshakeState::handle_data_received(Connection& conn)
   return result;
 }
 
-expected<void, ErrorCode> HandshakeState::handle_send_request(
-    Connection& /* conn */, std::string_view /* payload */) {
+expected<void, ErrorCode> HandshakeState::handle_send_request(Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kInvalidState);
 }
 
-expected<void, ErrorCode> HandshakeState::handle_close_request(
-    Connection& conn, uint16_t /* code */) {
+expected<void, ErrorCode> HandshakeState::handle_close_request(Connection& conn, uint16_t /* code */) {
   conn.socket_.close();
   conn.transition_to_state(ConnectionState::kClosed);
   return expected<void, ErrorCode>::success();
@@ -444,14 +438,12 @@ expected<void, ErrorCode> OpenState::handle_data_received(Connection& conn) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> OpenState::handle_send_request(
-    Connection& conn, std::string_view payload) {
+expected<void, ErrorCode> OpenState::handle_send_request(Connection& conn, std::string_view payload) {
   conn.write_frame(payload, ws::OpCode::kText);
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> OpenState::handle_close_request(
-    Connection& conn, uint16_t code) {
+expected<void, ErrorCode> OpenState::handle_close_request(Connection& conn, uint16_t code) {
   conn.write_close_frame(code);
   conn.transition_to_state(ConnectionState::kClosing);
   return expected<void, ErrorCode>::success();
@@ -474,28 +466,23 @@ expected<void, ErrorCode> ClosingState::handle_data_received(Connection& conn) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> ClosingState::handle_send_request(
-    Connection& /* conn */, std::string_view /* payload */) {
+expected<void, ErrorCode> ClosingState::handle_send_request(Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kInvalidState);
 }
 
-expected<void, ErrorCode> ClosingState::handle_close_request(
-    Connection& /* conn */, uint16_t /* code */) {
+expected<void, ErrorCode> ClosingState::handle_close_request(Connection& /* conn */, uint16_t /* code */) {
   return expected<void, ErrorCode>::success();
 }
 
-expected<void, ErrorCode> ClosedState::handle_data_received(
-    Connection& /* conn */) {
+expected<void, ErrorCode> ClosedState::handle_data_received(Connection& /* conn */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 
-expected<void, ErrorCode> ClosedState::handle_send_request(
-    Connection& /* conn */, std::string_view /* payload */) {
+expected<void, ErrorCode> ClosedState::handle_send_request(Connection& /* conn */, std::string_view /* payload */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 
-expected<void, ErrorCode> ClosedState::handle_close_request(
-    Connection& /* conn */, uint16_t /* code */) {
+expected<void, ErrorCode> ClosedState::handle_close_request(Connection& /* conn */, uint16_t /* code */) {
   return expected<void, ErrorCode>::error(ErrorCode::kConnectionClosed);
 }
 

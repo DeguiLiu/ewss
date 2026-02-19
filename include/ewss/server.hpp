@@ -21,14 +21,14 @@ namespace ewss {
 // ============================================================================
 
 struct TcpTuning {
-  bool tcp_nodelay = false;     // Disable Nagle algorithm
-  bool tcp_quickack = false;    // Reduce ACK delay (Linux-specific)
-  bool so_keepalive = false;    // Enable TCP keepalive
+  bool tcp_nodelay = false;   // Disable Nagle algorithm
+  bool tcp_quickack = false;  // Reduce ACK delay (Linux-specific)
+  bool so_keepalive = false;  // Enable TCP keepalive
 
   // Keepalive parameters (Linux-specific, effective when so_keepalive=true)
-  int keepalive_idle_s = 60;    // Seconds before first keepalive probe
+  int keepalive_idle_s = 60;      // Seconds before first keepalive probe
   int keepalive_interval_s = 10;  // Seconds between probes
-  int keepalive_count = 5;      // Max probes before dropping connection
+  int keepalive_count = 5;        // Max probes before dropping connection
 };
 
 // ============================================================================

@@ -6,10 +6,10 @@
 #include "vocabulary.hpp"
 
 #include <cstdint>
-#include <chrono>
 #include <cstring>
 
 #include <array>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <sockpp/tcp_socket.h>
@@ -88,7 +88,8 @@ class alignas(kCacheLine) RingBuffer {
   // Fill iovec for writev (scatter/gather IO, zero-copy send from read side)
   // Returns number of iovec entries filled (1 or 2)
   size_t fill_iovec(struct iovec* iov, size_t max_iov) const {
-    if (empty() || max_iov == 0) return 0;
+    if (empty() || max_iov == 0)
+      return 0;
 
     size_t contiguous = kCapacity - read_idx_;
     if (contiguous >= count_) {
@@ -114,7 +115,8 @@ class alignas(kCacheLine) RingBuffer {
   // Returns number of iovec entries filled (1 or 2)
   size_t fill_iovec_write(struct iovec* iov, size_t max_iov) const {
     size_t avail = available();
-    if (avail == 0 || max_iov == 0) return 0;
+    if (avail == 0 || max_iov == 0)
+      return 0;
 
     size_t contiguous = kCapacity - write_idx_;
     if (contiguous >= avail) {
@@ -138,7 +140,8 @@ class alignas(kCacheLine) RingBuffer {
 
   // Commit bytes written via fill_iovec_write (after readv returns)
   void commit_write(size_t len) {
-    if (len > available()) len = available();
+    if (len > available())
+      len = available();
     write_idx_ = (write_idx_ + len) % kCapacity;
     count_ += len;
   }
@@ -174,8 +177,8 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   static constexpr size_t kRxBufferSize = 4096;
   static constexpr size_t kTxBufferSize = 8192;
   static constexpr size_t kTempReadSize = 512;
-  static constexpr size_t kHandshakeTimeout = 5000;  // ms
-  static constexpr size_t kCloseTimeout = 5000;       // ms
+  static constexpr size_t kHandshakeTimeout = 5000;                  // ms
+  static constexpr size_t kCloseTimeout = 5000;                      // ms
   static constexpr size_t kTxHighWatermark = kTxBufferSize * 3 / 4;  // 75%
   static constexpr size_t kTxLowWatermark = kTxBufferSize / 4;       // 25%
 
@@ -224,16 +227,16 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   // --- Timeout checks (called by Server in poll loop) ---
 
   bool is_handshake_timed_out() const {
-    if (get_state() != ConnectionState::kHandshaking) return false;
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        SteadyClock::now() - created_at_).count();
+    if (get_state() != ConnectionState::kHandshaking)
+      return false;
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - created_at_).count();
     return static_cast<size_t>(elapsed) > kHandshakeTimeout;
   }
 
   bool is_close_timed_out() const {
-    if (get_state() != ConnectionState::kClosing) return false;
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        SteadyClock::now() - closing_at_).count();
+    if (get_state() != ConnectionState::kClosing)
+      return false;
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - closing_at_).count();
     return static_cast<size_t>(elapsed) > kCloseTimeout;
   }
 
@@ -241,8 +244,7 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
 
   uint64_t idle_ms() const {
     return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            SteadyClock::now() - last_activity_).count());
+        std::chrono::duration_cast<std::chrono::milliseconds>(SteadyClock::now() - last_activity_).count());
   }
 
   // --- Callbacks ---
@@ -252,7 +254,7 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   std::function<void(const ConnPtr&, bool)> on_close;
   std::function<void(const ConnPtr&)> on_error;
   std::function<void(const ConnPtr&)> on_backpressure;  // TX above high watermark
-  std::function<void(const ConnPtr&)> on_drain;          // TX drained below low watermark
+  std::function<void(const ConnPtr&)> on_drain;         // TX drained below low watermark
 
   // --- Getters ---
 
@@ -288,9 +290,9 @@ class alignas(kCacheLine) Connection : public std::enable_shared_from_this<Conne
   // --- Timeout tracking ---
   using SteadyClock = std::chrono::steady_clock;
   using TimePoint = SteadyClock::time_point;
-  TimePoint created_at_ = SteadyClock::now();   // Handshake timeout reference
-  TimePoint closing_at_{};                       // Close timeout reference
-  TimePoint last_activity_ = SteadyClock::now(); // Slow connection detection
+  TimePoint created_at_ = SteadyClock::now();     // Handshake timeout reference
+  TimePoint closing_at_{};                        // Close timeout reference
+  TimePoint last_activity_ = SteadyClock::now();  // Slow connection detection
 
   // --- Helper functions ---
 

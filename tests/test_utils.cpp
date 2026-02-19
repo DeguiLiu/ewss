@@ -1,5 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
 #include "ewss/utils.hpp"
+
+#include <catch2/catch_test_macros.hpp>
 
 using namespace ewss;
 
@@ -29,8 +30,7 @@ TEST_CASE("Base64 empty", "[utils]") {
 TEST_CASE("SHA1 hash", "[utils]") {
   // Test vector from WebSocket spec
   std::string input = "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-  auto hash = SHA1::compute(reinterpret_cast<const uint8_t*>(input.data()),
-                             input.size());
+  auto hash = SHA1::compute(reinterpret_cast<const uint8_t*>(input.data()), input.size());
 
   std::string hex_hash = Base64::encode(hash.data(), hash.size());
   REQUIRE(hex_hash == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
@@ -43,13 +43,11 @@ TEST_CASE("WebSocket frame parsing - single frame", "[utils]") {
   // Bytes 2-5: Mask key
   // Bytes 6-10: Masked payload
 
-  uint8_t frame[] = {0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d,
-                     0x7f, 0x9f, 0x4d, 0x51, 0x58};  // "Hello" masked
+  uint8_t frame[] = {0x81, 0x85, 0x37, 0xfa, 0x21, 0x3d, 0x7f, 0x9f, 0x4d, 0x51, 0x58};  // "Hello" masked
 
   ws::FrameHeader header;
-  size_t header_size = ws::parse_frame_header(
-      std::string_view(reinterpret_cast<const char*>(frame), sizeof(frame)),
-      header);
+  size_t header_size =
+      ws::parse_frame_header(std::string_view(reinterpret_cast<const char*>(frame), sizeof(frame)), header);
 
   REQUIRE(header_size == 6);  // 2 (FIN+Opcode+Len) + 4 (mask key)
   REQUIRE(header.fin);
@@ -63,7 +61,7 @@ TEST_CASE("WebSocket frame encoding", "[utils]") {
   auto frame = ws::encode_frame(ws::OpCode::kText, payload, false);
 
   // Check header
-  REQUIRE(frame[0] == 0x81);  // FIN + Text opcode
+  REQUIRE(frame[0] == 0x81);        // FIN + Text opcode
   REQUIRE((frame[1] & 0x80) == 0);  // No mask
   REQUIRE((frame[1] & 0x7F) == 5);  // Payload length = 5
 

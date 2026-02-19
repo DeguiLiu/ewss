@@ -37,6 +37,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+
 #include <new>
 #include <type_traits>
 #include <utility>
@@ -99,8 +100,7 @@ class expected final {
     return e;
   }
 
-  expected(const expected& other) noexcept : storage_{}, err_(other.err_),
-                                             has_value_(other.has_value_) {
+  expected(const expected& other) noexcept : storage_{}, err_(other.err_), has_value_(other.has_value_) {
     if (has_value_) {
       ::new (&storage_) V(other.value());
     }
@@ -120,8 +120,7 @@ class expected final {
     return *this;
   }
 
-  expected(expected&& other) noexcept : storage_{}, err_(other.err_),
-                                        has_value_(other.has_value_) {
+  expected(expected&& other) noexcept : storage_{}, err_(other.err_), has_value_(other.has_value_) {
     if (has_value_) {
       ::new (&storage_) V(static_cast<V&&>(other.value()));
     }
@@ -165,9 +164,7 @@ class expected final {
     return err_;
   }
 
-  V value_or(const V& default_val) const noexcept {
-    return has_value_ ? value() : default_val;
-  }
+  V value_or(const V& default_val) const noexcept { return has_value_ ? value() : default_val; }
 
  private:
   expected() noexcept : storage_{}, err_{}, has_value_(false) {}
@@ -280,9 +277,7 @@ class optional final {
     return *reinterpret_cast<const T*>(&storage_);
   }
 
-  T value_or(const T& default_val) const noexcept {
-    return has_value_ ? value() : default_val;
-  }
+  T value_or(const T& default_val) const noexcept { return has_value_ ? value() : default_val; }
 
   void reset() noexcept {
     if (has_value_) {
@@ -397,9 +392,7 @@ class FixedVector final {
     return *this;
   }
 
-  reference operator[](uint32_t index) noexcept {
-    return *reinterpret_cast<T*>(storage_ + index * sizeof(T));
-  }
+  reference operator[](uint32_t index) noexcept { return *reinterpret_cast<T*>(storage_ + index * sizeof(T)); }
 
   const_reference operator[](uint32_t index) const noexcept {
     return *reinterpret_cast<const T*>(storage_ + index * sizeof(T));
@@ -411,9 +404,7 @@ class FixedVector final {
   const_reference back() const noexcept { return (*this)[size_ - 1U]; }
 
   pointer data() noexcept { return reinterpret_cast<T*>(storage_); }
-  const_pointer data() const noexcept {
-    return reinterpret_cast<const T*>(storage_);
-  }
+  const_pointer data() const noexcept { return reinterpret_cast<const T*>(storage_); }
 
   iterator begin() noexcept { return data(); }
   const_iterator begin() const noexcept { return data(); }
@@ -433,8 +424,7 @@ class FixedVector final {
     if (size_ >= Capacity) {
       return false;
     }
-    ::new (storage_ + size_ * sizeof(T))
-        T{static_cast<CtorArgs&&>(args)...};
+    ::new (storage_ + size_ * sizeof(T)) T{static_cast<CtorArgs&&>(args)...};
     ++size_;
     return true;
   }
@@ -478,29 +468,22 @@ class FixedFunction<Ret(Args...), BufferSize> final {
   // NOLINTNEXTLINE(google-explicit-constructor)
   FixedFunction(std::nullptr_t) noexcept {}
 
-  template <typename F, typename = typename std::enable_if<
-                            !std::is_same<typename std::decay<F>::type,
-                                          FixedFunction>::value&&
-                                !std::is_same<typename std::decay<F>::type,
-                                              std::nullptr_t>::value>::type>
+  template <typename F,
+            typename = typename std::enable_if<!std::is_same<typename std::decay<F>::type, FixedFunction>::value &&
+                                               !std::is_same<typename std::decay<F>::type,
+                                                             std::nullptr_t>::value>::type>
   FixedFunction(F&& f) noexcept {  // NOLINT
     using Decay = typename std::decay<F>::type;
-    static_assert(sizeof(Decay) <= BufferSize,
-                  "Callable too large for FixedFunction buffer");
-    static_assert(alignof(Decay) <= alignof(Storage),
-                  "Callable alignment exceeds buffer alignment");
+    static_assert(sizeof(Decay) <= BufferSize, "Callable too large for FixedFunction buffer");
+    static_assert(alignof(Decay) <= alignof(Storage), "Callable alignment exceeds buffer alignment");
     ::new (&storage_) Decay(static_cast<F&&>(f));
     invoker_ = [](const Storage& s, Args... args) -> Ret {
-      return (*reinterpret_cast<const Decay*>(&s))(
-          static_cast<Args&&>(args)...);
+      return (*reinterpret_cast<const Decay*>(&s))(static_cast<Args&&>(args)...);
     };
-    destroyer_ = [](Storage& s) {
-      reinterpret_cast<Decay*>(&s)->~Decay();
-    };
+    destroyer_ = [](Storage& s) { reinterpret_cast<Decay*>(&s)->~Decay(); };
   }
 
-  FixedFunction(FixedFunction&& other) noexcept
-      : invoker_(other.invoker_), destroyer_(other.destroyer_) {
+  FixedFunction(FixedFunction&& other) noexcept : invoker_(other.invoker_), destroyer_(other.destroyer_) {
     if (other.invoker_) {
       std::memcpy(&storage_, &other.storage_, BufferSize);
       other.invoker_ = nullptr;
@@ -575,25 +558,18 @@ template <typename Ret, typename... Args>
 class function_ref<Ret(Args...)> final {
  public:
   template <typename F,
-            typename = typename std::enable_if<
-                !std::is_same<typename std::decay<F>::type, function_ref>::value>::type>
+            typename = typename std::enable_if<!std::is_same<typename std::decay<F>::type, function_ref>::value>::type>
   function_ref(F&& f) noexcept  // NOLINT
-      : obj_(const_cast<void*>(static_cast<const void*>(&f))),
-        invoker_([](void* o, Args... args) -> Ret {
-          return (*static_cast<typename std::remove_reference<F>::type*>(o))(
-              static_cast<Args&&>(args)...);
+      : obj_(const_cast<void*>(static_cast<const void*>(&f))), invoker_([](void* o, Args... args) -> Ret {
+          return (*static_cast<typename std::remove_reference<F>::type*>(o))(static_cast<Args&&>(args)...);
         }) {}
 
   function_ref(Ret (*fn)(Args...)) noexcept  // NOLINT
-      : obj_(reinterpret_cast<void*>(fn)),
-        invoker_([](void* o, Args... args) -> Ret {
-          return reinterpret_cast<Ret (*)(Args...)>(o)(
-              static_cast<Args&&>(args)...);
+      : obj_(reinterpret_cast<void*>(fn)), invoker_([](void* o, Args... args) -> Ret {
+          return reinterpret_cast<Ret (*)(Args...)>(o)(static_cast<Args&&>(args)...);
         }) {}
 
-  Ret operator()(Args... args) const {
-    return invoker_(obj_, static_cast<Args&&>(args)...);
-  }
+  Ret operator()(Args... args) const { return invoker_(obj_, static_cast<Args&&>(args)...); }
 
  private:
   void* obj_;
@@ -624,8 +600,7 @@ class ScopeGuard final {
   ScopeGuard& operator=(const ScopeGuard&) = delete;
 
   ScopeGuard(ScopeGuard&& other) noexcept
-      : cleanup_(static_cast<FixedFunction<void()>&&>(other.cleanup_)),
-        active_(other.active_) {
+      : cleanup_(static_cast<FixedFunction<void()>&&>(other.cleanup_)), active_(other.active_) {
     other.active_ = false;
   }
 
@@ -648,8 +623,7 @@ class Logger {
   enum class Level : uint8_t { kInfo = 0, kWarn, kError, kDebug };
 
   static void log(Level level, const char* msg) {
-    static constexpr const char* kPrefix[] = {
-        "[INFO]", "[WARN]", "[ERROR]", "[DEBUG]"};
+    static constexpr const char* kPrefix[] = {"[INFO]", "[WARN]", "[ERROR]", "[DEBUG]"};
     // Minimal implementation: stderr output
     // Future: integrate with newosp async logger
     (void)level;

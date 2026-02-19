@@ -32,7 +32,8 @@ class alignas(kCacheLine) ObjectPool {
 
   // Acquire a slot index, returns -1 if pool exhausted
   int32_t acquire() {
-    if (free_count_ == 0) return -1;
+    if (free_count_ == 0)
+      return -1;
     --free_count_;
     int32_t idx = static_cast<int32_t>(free_list_[free_count_]);
     slot_active_[idx] = true;
@@ -41,30 +42,26 @@ class alignas(kCacheLine) ObjectPool {
 
   // Release a slot back to pool
   void release(int32_t idx) {
-    if (idx < 0 || static_cast<size_t>(idx) >= MaxSlots) return;
-    if (!slot_active_[idx]) return;
+    if (idx < 0 || static_cast<size_t>(idx) >= MaxSlots)
+      return;
+    if (!slot_active_[idx])
+      return;
     slot_active_[idx] = false;
     free_list_[free_count_] = static_cast<size_t>(idx);
     ++free_count_;
   }
 
   // Get raw storage for slot (placement new by caller)
-  void* storage(int32_t idx) {
-    return &slots_[static_cast<size_t>(idx) * sizeof(T)];
-  }
+  void* storage(int32_t idx) { return &slots_[static_cast<size_t>(idx) * sizeof(T)]; }
 
   // Get typed pointer
-  T* get(int32_t idx) {
-    return reinterpret_cast<T*>(storage(idx));
-  }
+  T* get(int32_t idx) { return reinterpret_cast<T*>(storage(idx)); }
 
   // Status
   size_t available() const { return free_count_; }
   size_t capacity() const { return MaxSlots; }
   size_t in_use() const { return MaxSlots - free_count_; }
-  bool is_active(int32_t idx) const {
-    return idx >= 0 && static_cast<size_t>(idx) < MaxSlots && slot_active_[idx];
-  }
+  bool is_active(int32_t idx) const { return idx >= 0 && static_cast<size_t>(idx) < MaxSlots && slot_active_[idx]; }
 
  private:
   // Storage for objects (aligned)
