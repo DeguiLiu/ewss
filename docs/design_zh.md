@@ -55,7 +55,7 @@ Server (poll Reactor)
   +-- Connection #N ─┘
         RxBuffer (RingBuffer<4096>)
             | readv 零拷贝接收
-        ProtocolHandler (状态机)
+        StateOps (函数指针表)
             | on_message 回调
         Application
             | send()
@@ -70,7 +70,7 @@ Server (poll Reactor)
 |------|------|------|
 | I/O 模型 | `poll()` 单线程 Reactor | 无锁、无上下文切换、Cache 友好 |
 | 内存模型 | 编译期固定 RingBuffer | 运行时零堆分配，确定性内存 |
-| 状态管理 | 4 状态协议处理器 (静态实例) | 零分配状态转换，职责清晰 |
+| 状态管理 | 4 状态 StateOps 函数指针表 | 零分配状态转换，零 virtual，职责清晰 |
 | Socket I/O | `readv`/`writev` 零拷贝 | 内核直接读写 RingBuffer，省去 memcpy |
 | 错误处理 | `expected<V, E>` | 类型安全，兼容 `-fno-exceptions` |
 | 连接容器 | `FixedVector<ConnPtr, 64>` | 栈分配，swap-and-pop O(1) 移除 |
@@ -78,16 +78,16 @@ Server (poll Reactor)
 
 ### 2.3 核心模块
 
-| 模块 | 文件 | 职责 |
+| 模块 | 位置 | 职责 |
 |------|------|------|
-| Server | `server.hpp/cpp` | Reactor 主循环、连接管理、TCP 调优、过载保护、性能监控 |
-| Connection | `connection.hpp/cpp` | 连接生命周期、状态转换、零拷贝 I/O、回压控制、超时管理 |
-| ProtocolHandler | `connection.hpp/cpp` | WebSocket 握手、帧解析 (HandshakeState/OpenState/ClosingState/ClosedState) |
-| RingBuffer | `connection.hpp` | 固定大小循环缓冲，`readv`/`writev` iovec 接口 |
-| Utils | `utils.hpp` | Base64、SHA1、WebSocket 帧编解码、掩码处理 |
-| TLS | `tls.hpp` | 可选 mbedTLS 适配层 (TlsConfig/TlsContext/TlsSession) |
-| Vocabulary | `vocabulary.hpp` | 基础类型: expected、optional、FixedVector、FixedString、FixedFunction、ScopeGuard |
-| ConnectionPool | `connection_pool.hpp` | ServerStats 原子计数器、过载检测 |
+| Server | `ewss.hpp` | Reactor 主循环、连接管理、TCP 调优、过载保护、性能监控 |
+| Connection | `ewss.hpp` | 连接生命周期、状态转换、零拷贝 I/O、回压控制、超时管理 |
+| StateOps | `ewss.hpp` | 函数指针表: 4 状态处理 (Handshaking/Open/Closing/Closed)，零 virtual |
+| RingBuffer | `ewss.hpp` | 固定大小循环缓冲，`readv`/`writev` iovec 接口 |
+| Utils | `ewss.hpp` | Base64、SHA1、WebSocket 帧编解码、掩码处理 |
+| TLS | `ewss.hpp` | 可选 mbedTLS 适配层 (TlsConfig/TlsContext/TlsSession) |
+| Vocabulary | `ewss.hpp` | 基础类型: expected、optional、FixedVector、FixedString、FixedFunction、ScopeGuard |
+| ServerStats | `ewss.hpp` | 原子计数器、过载检测 |
 
 ---
 
@@ -103,14 +103,14 @@ RxBuffer.fill_iovec_write() → iovec[2]
 RxBuffer.commit_write(n)
     ↓
 ProtocolHandler::handle_data_received()
-    ├─ HandshakeState: parse_handshake()
+    ├─ HandshakeState: ops_->on_data()
     │   ├─ 零拷贝: peek 到栈缓冲，string_view 解析
     │   ├─ 提取 Sec-WebSocket-Key
     │   ├─ 生成 Accept Key (SHA1 + Base64)
     │   ├─ snprintf 构建 HTTP 101 响应 (栈上 256B)
     │   ├─ 写入 TxBuffer
     │   └─ 转移 → OpenState, 触发 on_open
-    └─ OpenState: parse_frames()
+    └─ OpenState: ops_->on_data()
         ├─ 循环: peek → parse_frame_header()
         ├─ 检查 payload 完整性
         ├─ unmask_payload() (客户端帧)
@@ -153,13 +153,34 @@ Handshaking ──(握手成功)──> Open ──(Close 帧)──> Closing �
                              +──(Close 超时 5s)─────────────────+
 ```
 
-### 4.2 静态实例 (零堆分配)
+### 4.2 StateOps 函数指针表 (零堆分配)
 
 ```cpp
-static HandshakeState g_handshake_state;
-static OpenState      g_open_state;
-static ClosingState   g_closing_state;
-static ClosedState    g_closed_state;
+// Function pointer types for state operations
+using StateDataHandler = expected<void, ErrorCode> (*)(Connection& conn);
+using StateSendHandler = expected<void, ErrorCode> (*)(Connection& conn, std::string_view payload);
+using StateCloseHandler = expected<void, ErrorCode> (*)(Connection& conn, uint16_t code);
+
+struct StateOps {
+  ConnectionState state;
+  StateDataHandler on_data;
+  StateSendHandler on_send;
+  StateCloseHandler on_close;
+};
+
+// Compile-time constant state tables (zero allocation, zero virtual)
+inline const StateOps kHandshakeOps = {
+    ConnectionState::kHandshaking,
+    detail::handshake_on_data, detail::handshake_on_send, detail::handshake_on_close};
+inline const StateOps kOpenOps = {
+    ConnectionState::kOpen,
+    detail::open_on_data, detail::open_on_send, detail::open_on_close};
+inline const StateOps kClosingOps = {
+    ConnectionState::kClosing,
+    detail::closing_on_data, detail::closing_on_send, detail::closing_on_close};
+inline const StateOps kClosedOps = {
+    ConnectionState::kClosed,
+    detail::closed_on_data, detail::closed_on_send, detail::closed_on_close};
 ```
 
 状态转换通过指针切换实现:
@@ -168,15 +189,15 @@ static ClosedState    g_closed_state;
 void Connection::transition_to_state(ConnectionState state) {
   switch (state) {
     case ConnectionState::kOpen:
-      protocol_handler_ = &g_open_state;
+      ops_ = &kOpenOps;
       if (on_open) on_open(shared_from_this());
       break;
     case ConnectionState::kClosing:
-      protocol_handler_ = &g_closing_state;
-      closing_at_ = SteadyClock::now();  // Record close start time
+      ops_ = &kClosingOps;
+      closing_at_ = SteadyClock::now();
       break;
     case ConnectionState::kClosed:
-      protocol_handler_ = &g_closed_state;
+      ops_ = &kClosedOps;
       if (on_close) on_close(shared_from_this(), true);
       break;
     // ...
@@ -387,9 +408,9 @@ sockpp (DeguiLiu/sockpp fork) 使用相同模式的 `SOCKPP_THROW` 宏，所有 
 ### 9.3 CMake 配置
 
 ```cmake
-# Apply -fno-exceptions only to ewss target, not third-party deps
+# Header-only INTERFACE library
 if(EWSS_NO_EXCEPTIONS)
-  target_compile_options(ewss PUBLIC -fno-exceptions -fno-rtti)
+  target_compile_options(ewss INTERFACE -fno-exceptions -fno-rtti)
 endif()
 ```
 
@@ -427,8 +448,8 @@ endif()
 
 | 指标 | 值 |
 |------|-----|
+| 库类型 | Header-only (单文件 ~1720 行) |
 | 二进制大小 (stripped) | 67 KB |
-| 静态库 (libewss.a) | 94 KB |
 
 详细性能数据参见 [benchmark_report.md](benchmark_report.md)。
 
