@@ -52,3 +52,6 @@ sockpp/
 # Test binaries
 test_*
 !tests/test_*.cpp
+
+# Internal AI workspace
+.ai/
