@@ -24,7 +24,7 @@ include(FetchContent)
 FetchContent_Declare(
   sockpp
   GIT_REPOSITORY https://ghfast.top/https://github.com/DeguiLiu/sockpp.git
-  GIT_TAG 8ae1354
+  GIT_TAG master
 )
 
 FetchContent_MakeAvailable(sockpp)
